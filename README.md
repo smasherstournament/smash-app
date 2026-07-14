@@ -1,5 +1,6 @@
----
+git commit -m "Initial commit of tournament management system"
 
+---
 # 🏸 Badminton Tournament Management System
 
 A real-time, end-to-end tournament management platform designed for seamless coordination between Admins, Referees, and Participants. Built with **React**, **Tailwind CSS**, and **Firebase**.
@@ -95,9 +96,7 @@ npm run dev
 ```
 
 Open the provided local URL (e.g., `http://localhost:5173`) in your browser to start managing your tournament.
-
 ---
-
 ## 📂 Project Structure
 
 * `src/pages/Admin/AdminView.jsx`: Tournament creation, scheduling, and standings.
