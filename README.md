@@ -1,4 +1,6 @@
-git commit -m "Initial commit of tournament git config --global --unset credential.helpergit push -u origin maingit remote set-url origin git@github.com:sarthakk2110/smash.gitgit remote set-url origin https://github.com/sarthak2110/peaceproject.gitgit remote -vmanagement system"git branch -M main
+git commit -m "Initial commit of tournament git config --global --unset credential.helpergit push -u origin maingit remote set-url origin git@github.com:sarthakk2110/smash.gitgit remote set-url origin https://github.com/sarthak2110/peaceproject.gitgit remote -vgit branch -M main
+
+git push -u origin mainmanagement system"git branch -M main
 
 git push -u origin maingit push -u origin main
 
