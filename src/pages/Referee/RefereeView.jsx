@@ -146,7 +146,7 @@ export default function RefereeView() {
     };
 
     return (
-      <div className="p-4 bg-white rounded-xl shadow-sm min-h-[60vh] flex flex-col justify-center items-center">
+      <div className="p-4 bg-white rounded-xl shadow-sm min-h-[60vh] flex flex-col justify-center items-center relative">
         <button 
           onClick={() => setSelectedTournamentId(null)} 
           className="absolute top-6 left-6 text-xs text-blue-600 font-bold uppercase"
@@ -257,6 +257,7 @@ export default function RefereeView() {
       )}
 
       <div className="flex-1 grid grid-cols-2 gap-4">
+        {/* TEAM A */}
         <div className="flex flex-col space-y-3">
           <div className="bg-blue-600 text-white p-3 rounded-t-xl text-center">
             <h3 className="font-semibold text-base truncate">{activeMatch.teamA}</h3>
@@ -264,11 +265,14 @@ export default function RefereeView() {
           <button onClick={() => updateScore('A', 1)} disabled={isMatchCompleted} className="flex-1 bg-blue-100 active:bg-blue-200 text-blue-700 rounded-xl flex items-center justify-center shadow-inner transition-colors min-h-[160px] disabled:opacity-50">
             <span className="text-7xl font-bold">{isMatchCompleted ? '-' : activeMatch.teamAPoints}</span>
           </button>
-          <button onClick={() => updateScore('A', -1)} disabled={isMatchCompleted} className="p-4 bg-white border-2 border-gray-200 rounded-b-xl flex justify-center text-gray-600 active:bg-gray-100 disabled:opacity-50">
-            <Minus size={24} />
-          </button>
+          {!isMatchCompleted && (
+            <button onClick={() => updateScore('A', -1)} className="p-4 bg-white border-2 border-gray-200 rounded-b-xl flex justify-center text-gray-600 active:bg-gray-100">
+              <Minus size={24} />
+            </button>
+          )}
         </div>
 
+        {/* TEAM B */}
         <div className="flex flex-col space-y-3">
           <div className="bg-red-600 text-white p-3 rounded-t-xl text-center">
             <h3 className="font-semibold text-base truncate">{activeMatch.teamB}</h3>
@@ -276,16 +280,22 @@ export default function RefereeView() {
           <button onClick={() => updateScore('B', 1)} disabled={isMatchCompleted} className="flex-1 bg-red-100 active:bg-red-200 text-red-700 rounded-xl flex items-center justify-center shadow-inner transition-colors min-h-[160px] disabled:opacity-50">
             <span className="text-7xl font-bold">{isMatchCompleted ? '-' : activeMatch.teamBPoints}</span>
           </button>
-          <button onClick={() => updateScore('B', -1)} disabled={isMatchCompleted} className="p-4 bg-white border-2 border-gray-200 rounded-b-xl flex justify-center text-gray-600 active:bg-gray-100 disabled:opacity-50">
-            <Minus size={24} />
-          </button>
+          {!isMatchCompleted && (
+            <button onClick={() => updateScore('B', -1)} className="p-4 bg-white border-2 border-gray-200 rounded-b-xl flex justify-center text-gray-600 active:bg-gray-100">
+              <Minus size={24} />
+            </button>
+          )}
         </div>
       </div>
 
-      {!isMatchCompleted && (
+      {!isMatchCompleted ? (
         <button onClick={() => handleEndSet(activeMatch, maxSets)} className="mt-6 w-full bg-gray-800 text-white py-4 rounded-xl font-bold text-lg active:bg-gray-700 flex items-center justify-center">
           <CheckCircle className="mr-2" /> 
           Freeze Set {currentSetNum}
+        </button>
+      ) : (
+        <button onClick={() => setSelectedMatchId(null)} className="mt-6 w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg active:bg-blue-700 flex items-center justify-center shadow-md transition-colors">
+          ← Back to Assigned Courts
         </button>
       )}
     </div>
