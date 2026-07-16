@@ -22,6 +22,9 @@ export default function AdminView() {
   const [selectedPendingMatch, setSelectedPendingMatch] = useState({});
   const [editingMatch, setEditingMatch] = useState(null);
   const [editForm, setEditForm] = useState({ teamA: '', teamB: '' });
+  
+  // FIX 1: New state to prevent double-clicking generation
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, setUser);
@@ -45,6 +48,9 @@ export default function AdminView() {
   };
 
   const handleSaveTournament = async () => {
+    if (isGenerating) return; // Prevent double execution
+    setIsGenerating(true);
+
     const poolsMap = {};
     const effectivePools = tourneyConfig.type === 'knockout' ? 1 : (tourneyConfig.numPools || 2);
     
@@ -137,6 +143,8 @@ export default function AdminView() {
       setTourneyConfig({ name: '', sets: 3, points: 21, numTeams: 4, numPools: 2, numCourts: 2, tableTops: 2, type: 'round-robin' });
     } catch (error) {
       alert("Failed to save tournament.");
+    } finally {
+      setIsGenerating(false); // Re-enable button
     }
   };
 
@@ -172,11 +180,9 @@ export default function AdminView() {
     setEditingMatch(null);
   };
 
-  // --- UPDATED: SMARTER STANDINGS CALCULATOR ---
   const getPoolStandings = (poolName) => {
     const tourneyMatches = matches.filter(m => m.tournamentId === activeTournament?.id && m.poolName === poolName);
     
-    // 1. If standard pool, use defined teams. If knockout/final, extract teams from matches dynamically.
     let teamNames = activeTournament?.pools[poolName] || [];
     if (teamNames.length === 0) {
       const uniqueTeams = new Set();
@@ -187,12 +193,17 @@ export default function AdminView() {
       teamNames = Array.from(uniqueTeams);
     }
 
-    let stats = teamNames.map(t => ({ team: t, won: 0, setsWon: 0, pointsFor: 0, pointsAgainst: 0 }));
+    // FIX 3: Added 'losses: 0' to our stat tracker
+    let stats = teamNames.map(t => ({ team: t, won: 0, losses: 0, setsWon: 0, pointsFor: 0, pointsAgainst: 0 }));
     
     const completedMatches = tourneyMatches.filter(m => m.status === 'completed');
     completedMatches.forEach(match => {
       const winnerStat = stats.find(s => s.team === match.winner);
+      // Determine loser to track losses
+      const loserStat = stats.find(s => s.team !== match.winner && (s.team === match.teamA || s.team === match.teamB));
+      
       if (winnerStat) winnerStat.won += 1;
+      if (loserStat) loserStat.losses += 1;
 
       match.completedSets?.forEach(set => {
         const teamAStat = stats.find(s => s.team === match.teamA);
@@ -379,7 +390,14 @@ export default function AdminView() {
                 <input key={index} type="text" value={teamNames[index] || ''} onChange={(e) => { const newNames = [...teamNames]; newNames[index] = e.target.value; setTeamNames(newNames); }} placeholder={`Team ${index + 1}`} className="w-full border p-2 rounded" />
               ))}
             </div>
-            <button onClick={handleSaveTournament} className="w-full bg-green-600 text-white py-3 rounded-lg font-bold">Generate Tournament</button>
+            {/* FIX 1: Generate Button disabled & styled when submitting */}
+            <button 
+              onClick={handleSaveTournament} 
+              disabled={isGenerating}
+              className={`w-full text-white py-3 rounded-lg font-bold ${isGenerating ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600'}`}
+            >
+              {isGenerating ? 'Generating...' : 'Generate Tournament'}
+            </button>
           </div>
         )}
       </div>
@@ -432,16 +450,18 @@ export default function AdminView() {
               if (standings.length === 0) return null;
 
               return (
-                <div key={poolName} className="border rounded-lg overflow-hidden bg-white shadow-sm">
+                <div key={poolName} className="border rounded-lg overflow-hidden bg-white shadow-sm overflow-x-auto w-full">
                   <div className={`text-white text-xs font-bold px-3 py-2 uppercase ${poolName === 'Final' ? 'bg-yellow-500' : poolName.includes('Knockout') ? 'bg-purple-600' : 'bg-blue-600'}`}>
                     {poolName}
                   </div>
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full text-left text-sm min-w-max">
                     <thead className="bg-gray-100 text-gray-600 text-xs uppercase">
                       <tr>
                         <th className="px-3 py-2">Team</th>
                         <th className="px-2 py-2 text-center">W</th>
                         <th className="px-2 py-2 text-center">Sets</th>
+                        {/* FIX 3: Loss Column Header */}
+                        <th className="px-2 py-2 text-center text-red-500">L</th> 
                         <th className="px-2 py-2 text-center" title="Point Differential">Pt Diff</th>
                       </tr>
                     </thead>
@@ -458,6 +478,8 @@ export default function AdminView() {
                             </td>
                             <td className="px-2 py-2 text-center font-bold">{stat.won}</td>
                             <td className="px-2 py-2 text-center text-gray-600">{stat.setsWon}</td>
+                            {/* FIX 3: Loss Column Data */}
+                            <td className="px-2 py-2 text-center font-bold text-red-500">{stat.losses}</td>
                             <td className={`px-2 py-2 text-center font-bold ${stat.pointDiff > 0 ? 'text-green-600' : stat.pointDiff < 0 ? 'text-red-600' : 'text-gray-500'}`}>
                               {stat.pointDiff > 0 ? `+${stat.pointDiff}` : stat.pointDiff}
                             </td>
@@ -497,14 +519,15 @@ export default function AdminView() {
                   <button onClick={() => unassignMatch(matchOnCourt.id)} className="text-xs text-red-600 font-bold underline">Unassign Court</button>
                 </div>
               ) : (
-                <div className="flex gap-2">
-                  <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border p-2 rounded text-sm">
+                // FIX 2: Added flex-col on mobile, flex-row on screen for dropdown and assign button
+                <div className="flex flex-col sm:flex-row gap-2 w-full">
+                  <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border p-2 rounded text-sm w-full">
                     <option value="">-- Select Pending Match --</option>
                     {pendingMatches.map(m => (
                       <option key={m.id} value={m.id}>[{m.poolName}] {m.teamA} vs {m.teamB}</option>
                     ))}
                   </select>
-                  <button onClick={() => assignMatchToCourt(i)} className="bg-blue-600 text-white px-4 py-2 rounded font-bold text-sm">Assign</button>
+                  <button onClick={() => assignMatchToCourt(i)} className="bg-blue-600 text-white px-4 py-2 rounded font-bold text-sm w-full sm:w-auto">Assign</button>
                 </div>
               )}
             </div>
