@@ -14,16 +14,16 @@ export default function AdminView() {
   const [activeTournament, setActiveTournament] = useState(null);
   
   const [tourneyConfig, setTourneyConfig] = useState({ 
-    name: '', sets: 3, points: 21, numTeams: 4, numPools: 2, numCourts: 2, tableTops: 2, type: 'round-robin' 
+    name: '', sets: 3, points: 21, numTeams: 4, numPools: 2, numCourts: 2, tableTops: 2, type: 'round-robin', assignmentMode: 'auto'
   });
   const [teamNames, setTeamNames] = useState([]);
+  const [manualTeams, setManualTeams] = useState({});
 
   const [matches, setMatches] = useState([]);
   const [selectedPendingMatch, setSelectedPendingMatch] = useState({});
   const [editingMatch, setEditingMatch] = useState(null);
   const [editForm, setEditForm] = useState({ teamA: '', teamB: '' });
   
-  // FIX 1: New state to prevent double-clicking generation
   const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export default function AdminView() {
   };
 
   const handleSaveTournament = async () => {
-    if (isGenerating) return; // Prevent double execution
+    if (isGenerating) return; 
     setIsGenerating(true);
 
     const poolsMap = {};
@@ -58,10 +58,18 @@ export default function AdminView() {
       poolsMap[tourneyConfig.type === 'knockout' ? 'Main Bracket' : `Pool ${String.fromCharCode(65 + i)}`] = [];
     }
     
-    teamNames.forEach((team, index) => {
-      const poolName = tourneyConfig.type === 'knockout' ? 'Main Bracket' : `Pool ${String.fromCharCode(65 + (index % effectivePools))}`;
-      poolsMap[poolName].push(team || `Team ${index + 1}`);
-    });
+    if (tourneyConfig.type === 'round-robin' && tourneyConfig.assignmentMode === 'manual') {
+      Object.keys(manualTeams).forEach(poolName => {
+        manualTeams[poolName].forEach((team, idx) => {
+          poolsMap[poolName].push(team || `${poolName} Team ${idx + 1}`);
+        });
+      });
+    } else {
+      teamNames.forEach((team, index) => {
+        const poolName = tourneyConfig.type === 'knockout' ? 'Main Bracket' : `Pool ${String.fromCharCode(65 + (index % effectivePools))}`;
+        poolsMap[poolName].push(team || `Team ${index + 1}`);
+      });
+    }
 
     try {
       const generatedRefCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -127,11 +135,17 @@ export default function AdminView() {
       } else if (tourneyConfig.type === 'knockout') {
         const teams = poolsMap['Main Bracket'];
         for (let i = 0; i < teams.length; i += 2) {
+          const hasOpponent = !!teams[i+1];
           const matchRef = doc(collection(db, 'matches'));
           batch.set(matchRef, {
-            tournamentId: safeDocId, poolName: 'Round 1', teamA: teams[i], teamB: teams[i+1] || 'BYE (Auto-Win)',
+            tournamentId: safeDocId, 
+            poolName: 'Round 1', 
+            teamA: teams[i], 
+            teamB: hasOpponent ? teams[i+1] : 'BYE', // Handle uneven brackets
             teamAPoints: 0, teamBPoints: 0, currentSet: 1, completedSets: [],
-            status: teams[i+1] ? 'pending' : 'completed', courtName: null, createdAt: serverTimestamp()
+            status: hasOpponent ? 'pending' : 'completed', // Auto-finish BYEs
+            winner: hasOpponent ? null : teams[i],
+            courtName: null, createdAt: serverTimestamp()
           });
         }
       }
@@ -140,11 +154,12 @@ export default function AdminView() {
 
       setActiveTournament({ id: safeDocId, ...tourneyData });
       setView('tournament-details');
-      setTourneyConfig({ name: '', sets: 3, points: 21, numTeams: 4, numPools: 2, numCourts: 2, tableTops: 2, type: 'round-robin' });
+      setTourneyConfig({ name: '', sets: 3, points: 21, numTeams: 4, numPools: 2, numCourts: 2, tableTops: 2, type: 'round-robin', assignmentMode: 'auto' });
+      setManualTeams({});
     } catch (error) {
       alert("Failed to save tournament.");
     } finally {
-      setIsGenerating(false); // Re-enable button
+      setIsGenerating(false); 
     }
   };
 
@@ -181,26 +196,27 @@ export default function AdminView() {
   };
 
   const getPoolStandings = (poolName) => {
-    const tourneyMatches = matches.filter(m => m.tournamentId === activeTournament?.id && m.poolName === poolName);
+    // FIX: For Knockouts, fetch ALL matches to calculate full bracket stats correctly
+    const tourneyMatches = activeTournament?.type === 'knockout' 
+      ? matches.filter(m => m.tournamentId === activeTournament?.id)
+      : matches.filter(m => m.tournamentId === activeTournament?.id && m.poolName === poolName);
     
     let teamNames = activeTournament?.pools[poolName] || [];
     if (teamNames.length === 0) {
       const uniqueTeams = new Set();
       tourneyMatches.forEach(m => {
         if (m.teamA) uniqueTeams.add(m.teamA);
-        if (m.teamB) uniqueTeams.add(m.teamB);
+        if (m.teamB && m.teamB !== 'BYE') uniqueTeams.add(m.teamB);
       });
       teamNames = Array.from(uniqueTeams);
     }
 
-    // FIX 3: Added 'losses: 0' to our stat tracker
     let stats = teamNames.map(t => ({ team: t, won: 0, losses: 0, setsWon: 0, pointsFor: 0, pointsAgainst: 0 }));
     
     const completedMatches = tourneyMatches.filter(m => m.status === 'completed');
     completedMatches.forEach(match => {
       const winnerStat = stats.find(s => s.team === match.winner);
-      // Determine loser to track losses
-      const loserStat = stats.find(s => s.team !== match.winner && (s.team === match.teamA || s.team === match.teamB));
+      const loserStat = stats.find(s => s.team !== match.winner && (s.team === match.teamA || s.team === match.teamB) && s.team !== 'BYE');
       
       if (winnerStat) winnerStat.won += 1;
       if (loserStat) loserStat.losses += 1;
@@ -213,7 +229,7 @@ export default function AdminView() {
           teamAStat.pointsFor += set.teamA;
           teamAStat.pointsAgainst += set.teamB;
         }
-        if (teamBStat) {
+        if (teamBStat && teamBStat.team !== 'BYE') {
           if (set.winner === 'B') teamBStat.setsWon += 1;
           teamBStat.pointsFor += set.teamB;
           teamBStat.pointsAgainst += set.teamA;
@@ -230,6 +246,65 @@ export default function AdminView() {
       });
   };
 
+  // ----------------------------------------------------
+  // KNOCKOUT ENGINE: PROGRESS TEAMS TO THE NEXT ROUND
+  // ----------------------------------------------------
+  const handleGenerateNextRound = async () => {
+    const tourneyMatches = matches.filter(m => m.tournamentId === activeTournament?.id);
+    
+    let maxRound = 0;
+    tourneyMatches.forEach(m => {
+      if (m.poolName.startsWith('Round ')) {
+        const r = parseInt(m.poolName.replace('Round ', ''));
+        if (r > maxRound) maxRound = r;
+      }
+      if (m.poolName === 'Final') maxRound = 999;
+    });
+
+    if (maxRound === 999) return alert("Tournament is already in the Final phase!");
+    if (maxRound === 0) return alert("No active rounds found.");
+
+    const currentRoundMatches = tourneyMatches.filter(m => m.poolName === `Round ${maxRound}`);
+    
+    // Sort so the bracket flow pairs people up in order
+    currentRoundMatches.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+
+    // Ensure all current round matches are completed
+    const incomplete = currentRoundMatches.filter(m => m.status !== 'completed');
+    if (incomplete.length > 0) {
+      return alert(`Cannot generate next round! ${incomplete.length} match(es) in Round ${maxRound} are still pending or active.`);
+    }
+
+    // Extract winners and pair them up
+    const advancingTeams = currentRoundMatches.map(m => m.winner);
+    if (advancingTeams.length === 1) return alert(`Tournament is complete! ${advancingTeams[0]} is the Champion!`);
+
+    const isFinal = advancingTeams.length === 2;
+    const nextRoundName = isFinal ? 'Final' : `Round ${maxRound + 1}`;
+
+    const batch = writeBatch(db);
+    for (let i = 0; i < advancingTeams.length; i += 2) {
+      const hasOpponent = !!advancingTeams[i+1];
+      const matchRef = doc(collection(db, 'matches'));
+      batch.set(matchRef, {
+        tournamentId: activeTournament.id,
+        poolName: nextRoundName,
+        teamA: advancingTeams[i],
+        teamB: hasOpponent ? advancingTeams[i+1] : 'BYE',
+        teamAPoints: 0, teamBPoints: 0, currentSet: 1, completedSets: [],
+        status: hasOpponent ? 'pending' : 'completed', // Auto-advance odd teams
+        winner: hasOpponent ? null : advancingTeams[i],
+        courtName: null, createdAt: serverTimestamp()
+      });
+    }
+
+    await batch.commit();
+    alert(`${nextRoundName} has been generated successfully!`);
+  };
+
+  // ----------------------------------------------------
+  // ROUND ROBIN ENGINE: PLAYOFF RESOLUTION
+  // ----------------------------------------------------
   const handleAutoResolve = async () => {
     if (!window.confirm("Auto-resolve bracket? This will overwrite placeholders.")) return;
 
@@ -360,8 +435,12 @@ export default function AdminView() {
     return (
       <div className="p-4 bg-white rounded-xl shadow-sm min-h-[70vh]">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">{view === 'wizard-config' ? 'Tournament Setup' : 'Name the Teams'}</h2>
-          <button onClick={() => setView('hub')} className="text-sm text-gray-500 font-medium">Cancel</button>
+          <h2 className="text-2xl font-bold">
+            {view === 'wizard-config' ? 'Tournament Setup' : 'Name the Teams'}
+          </h2>
+          <button onClick={() => setView('hub')} className="text-sm text-gray-500 font-medium hover:text-gray-800 transition-colors">
+            Cancel
+          </button>
         </div>
 
         {view === 'wizard-config' ? (
@@ -371,6 +450,7 @@ export default function AdminView() {
               <option value="round-robin">Round Robin (Pools)</option>
               <option value="knockout">Knockout Bracket</option>
             </select>
+            
             <div className="grid grid-cols-2 gap-4 pt-4 border-t">
               <div><label className="text-xs font-bold text-gray-500 uppercase">Total Teams</label><input type="number" value={tourneyConfig.numTeams} onChange={(e) => setTourneyConfig({...tourneyConfig, numTeams: parseInt(e.target.value) || ''})} className="w-full border p-2 rounded mt-1" /></div>
               {tourneyConfig.type === 'round-robin' && (
@@ -380,24 +460,116 @@ export default function AdminView() {
                 <div><label className="text-xs font-bold text-blue-600 uppercase">Table Tops</label><input type="number" min="1" value={tourneyConfig.tableTops} onChange={(e) => setTourneyConfig({...tourneyConfig, tableTops: parseInt(e.target.value) || ''})} className="w-full border-2 border-blue-200 p-2 rounded mt-1" /></div>
               )}
               <div><label className="text-xs font-bold text-gray-500 uppercase">Courts</label><input type="number" value={tourneyConfig.numCourts} onChange={(e) => setTourneyConfig({...tourneyConfig, numCourts: parseInt(e.target.value) || ''})} className="w-full border p-2 rounded mt-1" /></div>
+              
+              {tourneyConfig.type === 'round-robin' && (
+                <div className="col-span-2 mt-2 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="w-full sm:w-auto text-left">
+                      <label className="text-sm font-bold text-blue-900 uppercase">Pool Assignment Mode</label>
+                      <p className="text-xs text-blue-700">How do you want to assign teams to pools?</p>
+                    </div>
+                    
+                    <div className="flex bg-white p-1 rounded-lg border border-blue-200 shadow-sm w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => setTourneyConfig({...tourneyConfig, assignmentMode: 'auto'})}
+                        className={`flex-1 sm:flex-none px-6 py-2 rounded-md font-bold text-sm transition-all ${
+                          tourneyConfig.assignmentMode === 'auto' 
+                          ? 'bg-blue-600 text-white shadow-md' 
+                          : 'text-gray-500 hover:bg-gray-100'
+                        }`}
+                      >
+                        ⚡ Auto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTourneyConfig({...tourneyConfig, assignmentMode: 'manual'})}
+                        className={`flex-1 sm:flex-none px-6 py-2 rounded-md font-bold text-sm transition-all ${
+                          tourneyConfig.assignmentMode === 'manual' 
+                          ? 'bg-blue-600 text-white shadow-md' 
+                          : 'text-gray-500 hover:bg-gray-100'
+                        }`}
+                      >
+                        ✋ Manual
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-            <button onClick={() => { setTeamNames(Array(tourneyConfig.numTeams || 4).fill('')); setView('wizard-teams'); }} disabled={!tourneyConfig.name || (tourneyConfig.type === 'round-robin' && tourneyConfig.numPools % 2 !== 0)} className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-bold disabled:bg-gray-400">Next</button>
+            
+            <button 
+              onClick={() => { 
+                if (tourneyConfig.type === 'round-robin' && tourneyConfig.assignmentMode === 'manual') {
+                  const effectivePools = tourneyConfig.numPools || 2;
+                  const initialManual = {};
+                  for(let i=0; i<effectivePools; i++) {
+                     const poolName = `Pool ${String.fromCharCode(65 + i)}`;
+                     let count = Math.floor(tourneyConfig.numTeams / effectivePools);
+                     if (i < tourneyConfig.numTeams % effectivePools) count++; 
+                     initialManual[poolName] = Array(count).fill('');
+                  }
+                  setManualTeams(initialManual);
+                } else {
+                  setTeamNames(Array(tourneyConfig.numTeams || 4).fill('')); 
+                }
+                setView('wizard-teams'); 
+              }} 
+              disabled={!tourneyConfig.name || (tourneyConfig.type === 'round-robin' && tourneyConfig.numPools % 2 !== 0)} 
+              className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+            >
+              Next →
+            </button>
           </div>
         ) : (
           <div>
-            <div className="space-y-3 mb-6 max-h-[50vh] overflow-y-auto">
-              {Array.from({ length: tourneyConfig.numTeams || 4 }).map((_, index) => (
-                <input key={index} type="text" value={teamNames[index] || ''} onChange={(e) => { const newNames = [...teamNames]; newNames[index] = e.target.value; setTeamNames(newNames); }} placeholder={`Team ${index + 1}`} className="w-full border p-2 rounded" />
-              ))}
+            {tourneyConfig.type === 'round-robin' && tourneyConfig.assignmentMode === 'manual' ? (
+              <div className="space-y-4 mb-6 max-h-[50vh] overflow-y-auto pr-2">
+                {Object.keys(manualTeams).map(poolName => (
+                  <div key={poolName} className="border-2 border-gray-100 p-4 rounded-xl bg-gray-50">
+                    <h4 className="font-bold text-blue-800 mb-3">{poolName}</h4>
+                    <div className="space-y-2">
+                      {manualTeams[poolName].map((team, idx) => (
+                        <input 
+                          key={idx} 
+                          type="text" 
+                          value={team} 
+                          onChange={(e) => { 
+                            const newManual = { ...manualTeams }; 
+                            newManual[poolName][idx] = e.target.value; 
+                            setManualTeams(newManual); 
+                          }} 
+                          placeholder={`${poolName} - Team ${idx + 1}`} 
+                          className="w-full border p-2 rounded shadow-sm focus:border-blue-500 focus:outline-none" 
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3 mb-6 max-h-[50vh] overflow-y-auto">
+                {Array.from({ length: tourneyConfig.numTeams || 4 }).map((_, index) => (
+                  <input key={index} type="text" value={teamNames[index] || ''} onChange={(e) => { const newNames = [...teamNames]; newNames[index] = e.target.value; setTeamNames(newNames); }} placeholder={`Team ${index + 1}`} className="w-full border p-2 rounded shadow-sm" />
+                ))}
+              </div>
+            )}
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setView('wizard-config')}
+                className="w-1/3 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300 transition-colors"
+              >
+                ← Back
+              </button>
+              <button 
+                onClick={handleSaveTournament} 
+                disabled={isGenerating}
+                className={`w-2/3 text-white py-3 rounded-lg font-bold shadow-md transition-colors ${isGenerating ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+              >
+                {isGenerating ? 'Generating...' : 'Generate Tournament'}
+              </button>
             </div>
-            {/* FIX 1: Generate Button disabled & styled when submitting */}
-            <button 
-              onClick={handleSaveTournament} 
-              disabled={isGenerating}
-              className={`w-full text-white py-3 rounded-lg font-bold ${isGenerating ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600'}`}
-            >
-              {isGenerating ? 'Generating...' : 'Generate Tournament'}
-            </button>
           </div>
         )}
       </div>
@@ -412,7 +584,6 @@ export default function AdminView() {
   const activeCourtsMatches = tourneyMatches.filter(m => m.status === 'active');
   const completedMatches = tourneyMatches.filter(m => m.status === 'completed');
 
-  // Determine which standings tables to display
   const standardPools = Object.keys(activeTournament?.pools || {});
   const hasCrossovers = tourneyMatches.some(m => m.poolName === 'Knockout - Crossover');
   const hasFinal = tourneyMatches.some(m => m.poolName === 'Final');
@@ -421,11 +592,15 @@ export default function AdminView() {
   if (hasCrossovers) allDisplayPools.push('Knockout - Crossover');
   if (hasFinal) allDisplayPools.push('Final');
 
+  // Identify Champion for UI highlights
+  const finalMatch = tourneyMatches.find(m => m.poolName === 'Final' && m.status === 'completed');
+  const knockoutChampion = finalMatch ? finalMatch.winner : null;
+
   return (
     <div className="p-4 bg-white rounded-xl shadow-sm min-h-[70vh]">
       <div className="flex justify-between items-start mb-6 border-b pb-4">
         <div>
-          <button onClick={() => setView('hub')} className="text-xs text-blue-600 font-bold uppercase mb-1">← Back to Hub</button>
+          <button onClick={() => setView('hub')} className="text-xs text-blue-600 font-bold uppercase mb-1 hover:underline">← Back to Hub</button>
           <h2 className="text-2xl font-bold text-gray-800">{activeTournament?.tournamentName}</h2>
         </div>
         <div className="text-right bg-blue-50 p-3 rounded-lg border border-blue-100 min-w-[140px]">
@@ -434,25 +609,35 @@ export default function AdminView() {
         </div>
       </div>
 
-      {activeTournament?.type === 'round-robin' && (
+      {activeTournament && (
         <div className="mb-8 border-b pb-6">
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-bold text-gray-500 uppercase">Live Pool Standings & Playoffs</h3>
-            <button onClick={handleAutoResolve} className="bg-purple-600 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-purple-700">
-              ⚡ Auto-Resolve Knockouts
-            </button>
+            <h3 className="text-sm font-bold text-gray-500 uppercase">
+              {activeTournament.type === 'knockout' ? 'Live Tournament Standings' : 'Live Pool Standings & Playoffs'}
+            </h3>
+            
+            {/* Contextual Smart Resolution Button */}
+            {activeTournament.type === 'round-robin' ? (
+              <button onClick={handleAutoResolve} className="bg-purple-600 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors">
+                ⚡ Auto-Resolve Knockouts
+              </button>
+            ) : (
+              <button onClick={handleGenerateNextRound} className="bg-purple-600 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors">
+                ⚡ Generate Next Round
+              </button>
+            )}
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {allDisplayPools.map(poolName => {
               const standings = getPoolStandings(poolName);
-              // Hide empty crossover/final tables if no teams have been resolved yet
               if (standings.length === 0) return null;
+              const isKnockout = activeTournament.type === 'knockout';
 
               return (
                 <div key={poolName} className="border rounded-lg overflow-hidden bg-white shadow-sm overflow-x-auto w-full">
                   <div className={`text-white text-xs font-bold px-3 py-2 uppercase ${poolName === 'Final' ? 'bg-yellow-500' : poolName.includes('Knockout') ? 'bg-purple-600' : 'bg-blue-600'}`}>
-                    {poolName}
+                    {isKnockout ? "Overall Standings" : poolName}
                   </div>
                   <table className="w-full text-left text-sm min-w-max">
                     <thead className="bg-gray-100 text-gray-600 text-xs uppercase">
@@ -460,26 +645,34 @@ export default function AdminView() {
                         <th className="px-3 py-2">Team</th>
                         <th className="px-2 py-2 text-center">W</th>
                         <th className="px-2 py-2 text-center">Sets</th>
-                        {/* FIX 3: Loss Column Header */}
                         <th className="px-2 py-2 text-center text-red-500">L</th> 
+                        {isKnockout && <th className="px-2 py-2 text-center text-blue-600">Status</th>}
                         <th className="px-2 py-2 text-center" title="Point Differential">Pt Diff</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {standings.map((stat, idx) => {
-                        const isChampion = poolName === 'Final' && idx === 0 && stat.won > 0;
+                        const isChampion = (poolName === 'Final' && idx === 0 && stat.won > 0) || (isKnockout && stat.team === knockoutChampion);
                         const isKnockoutWinner = poolName === 'Knockout - Crossover' && stat.won > 0;
                         const isPoolQualifier = standardPools.includes(poolName) && idx < activeTournament.rules.tableTops;
+                        const isEliminated = isKnockout && stat.losses > 0;
                         
                         return (
                           <tr key={stat.team} className={isChampion ? "bg-yellow-100 font-bold" : (isKnockoutWinner || isPoolQualifier) ? "bg-green-50" : ""}>
-                            <td className="px-3 py-2 font-medium">
+                            <td className={`px-3 py-2 font-medium ${isEliminated ? 'line-through text-gray-400' : ''}`}>
                               {stat.team} {isChampion && " 🏆"}
                             </td>
                             <td className="px-2 py-2 text-center font-bold">{stat.won}</td>
                             <td className="px-2 py-2 text-center text-gray-600">{stat.setsWon}</td>
-                            {/* FIX 3: Loss Column Data */}
                             <td className="px-2 py-2 text-center font-bold text-red-500">{stat.losses}</td>
+                            
+                            {/* Knockout In/Out Status Column */}
+                            {isKnockout && (
+                              <td className={`px-2 py-2 text-center font-bold ${isEliminated ? 'text-red-500' : 'text-green-500'}`}>
+                                {isEliminated ? 'OUT' : 'IN'}
+                              </td>
+                            )}
+
                             <td className={`px-2 py-2 text-center font-bold ${stat.pointDiff > 0 ? 'text-green-600' : stat.pointDiff < 0 ? 'text-red-600' : 'text-gray-500'}`}>
                               {stat.pointDiff > 0 ? `+${stat.pointDiff}` : stat.pointDiff}
                             </td>
@@ -510,16 +703,15 @@ export default function AdminView() {
                 <div>
                   <div className="flex justify-between items-center bg-white p-3 rounded border shadow-sm mb-2">
                     <div>
-                      <span className={`text-xs font-bold px-2 py-1 rounded ${matchOnCourt.poolName === 'Final' ? 'bg-yellow-100 text-yellow-700' : matchOnCourt.poolName.includes('Knockout') ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-600'}`}>
+                      <span className={`text-xs font-bold px-2 py-1 rounded ${matchOnCourt.poolName === 'Final' ? 'bg-yellow-100 text-yellow-700' : matchOnCourt.poolName.includes('Round ') || matchOnCourt.poolName.includes('Knockout') ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-600'}`}>
                         {matchOnCourt.poolName}
                       </span>
                       <p className="text-sm font-bold mt-2">{matchOnCourt.teamA} vs {matchOnCourt.teamB}</p>
                     </div>
                   </div>
-                  <button onClick={() => unassignMatch(matchOnCourt.id)} className="text-xs text-red-600 font-bold underline">Unassign Court</button>
+                  <button onClick={() => unassignMatch(matchOnCourt.id)} className="text-xs text-red-600 font-bold hover:underline">Unassign Court</button>
                 </div>
               ) : (
-                // FIX 2: Added flex-col on mobile, flex-row on screen for dropdown and assign button
                 <div className="flex flex-col sm:flex-row gap-2 w-full">
                   <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border p-2 rounded text-sm w-full">
                     <option value="">-- Select Pending Match --</option>
@@ -527,7 +719,7 @@ export default function AdminView() {
                       <option key={m.id} value={m.id}>[{m.poolName}] {m.teamA} vs {m.teamB}</option>
                     ))}
                   </select>
-                  <button onClick={() => assignMatchToCourt(i)} className="bg-blue-600 text-white px-4 py-2 rounded font-bold text-sm w-full sm:w-auto">Assign</button>
+                  <button onClick={() => assignMatchToCourt(i)} className="bg-blue-600 text-white px-4 py-2 rounded font-bold text-sm w-full sm:w-auto hover:bg-blue-700 transition-colors">Assign</button>
                 </div>
               )}
             </div>
@@ -540,7 +732,7 @@ export default function AdminView() {
         <h3 className="text-sm font-bold text-gray-500 uppercase">Pending Matches ({pendingMatches.length})</h3>
         
         {completedMatches.filter(m => m.poolName === 'Knockout - Crossover').length === 2 && !matches.find(m => m.tournamentId === activeTournament?.id && m.poolName === 'Final') && (
-          <button onClick={handleCreateFinal} className="bg-yellow-500 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-yellow-600">
+          <button onClick={handleCreateFinal} className="bg-yellow-500 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition-colors">
             🏆 Generate Final Match
           </button>
         )}
@@ -549,11 +741,11 @@ export default function AdminView() {
       {editingMatch ? (
         <div className="bg-white p-4 rounded-lg border shadow mb-4">
           <h4 className="font-bold mb-2">Resolve Teams</h4>
-          <input type="text" value={editForm.teamA} onChange={e => setEditForm({...editForm, teamA: e.target.value})} className="w-full border p-2 mb-2 rounded" placeholder="Team A Name" />
-          <input type="text" value={editForm.teamB} onChange={e => setEditForm({...editForm, teamB: e.target.value})} className="w-full border p-2 mb-3 rounded" placeholder="Team B Name" />
+          <input type="text" value={editForm.teamA} onChange={e => setEditForm({...editForm, teamA: e.target.value})} className="w-full border p-2 mb-2 rounded focus:border-blue-500 focus:outline-none" placeholder="Team A Name" />
+          <input type="text" value={editForm.teamB} onChange={e => setEditForm({...editForm, teamB: e.target.value})} className="w-full border p-2 mb-3 rounded focus:border-blue-500 focus:outline-none" placeholder="Team B Name" />
           <div className="flex gap-2">
-            <button onClick={saveEditedMatch} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Save</button>
-            <button onClick={() => setEditingMatch(null)} className="bg-gray-200 px-4 py-2 rounded font-bold">Cancel</button>
+            <button onClick={saveEditedMatch} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition-colors">Save</button>
+            <button onClick={() => setEditingMatch(null)} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 transition-colors">Cancel</button>
           </div>
         </div>
       ) : null}
@@ -562,8 +754,8 @@ export default function AdminView() {
         {pendingMatches.length === 0 && <p className="text-sm text-gray-500 p-2 italic">No matches pending.</p>}
         {pendingMatches.map(m => (
           <div key={m.id} className="text-sm border-b py-2 flex justify-between items-center pr-2">
-            <span><strong className={m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Knockout') ? 'text-purple-600' : 'text-blue-600'}>[{m.poolName}]</strong> {m.teamA} vs {m.teamB}</span>
-            <button onClick={() => { setEditingMatch(m.id); setEditForm({teamA: m.teamA, teamB: m.teamB}); }} className="text-xs text-blue-600 font-bold underline">Edit</button>
+            <span><strong className={m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Round ') || m.poolName.includes('Knockout') ? 'text-purple-600' : 'text-blue-600'}>[{m.poolName}]</strong> {m.teamA} vs {m.teamB}</span>
+            <button onClick={() => { setEditingMatch(m.id); setEditForm({teamA: m.teamA, teamB: m.teamB}); }} className="text-xs text-blue-600 font-bold hover:underline">Edit</button>
           </div>
         ))}
       </div>
@@ -574,7 +766,7 @@ export default function AdminView() {
         {completedMatches.length === 0 && <p className="text-sm text-gray-500 p-2 italic">No matches completed yet.</p>}
         {completedMatches.map(m => (
           <div key={m.id} className="text-sm border-b py-2 flex justify-between">
-            <span><strong className={m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Knockout') ? 'text-purple-600' : 'text-blue-600'}>[{m.poolName}]</strong> {m.teamA} vs {m.teamB}</span>
+            <span><strong className={m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Round ') || m.poolName.includes('Knockout') ? 'text-purple-600' : 'text-blue-600'}>[{m.poolName}]</strong> {m.teamA} vs {m.teamB}</span>
             <span className="font-bold text-green-600">Winner: {m.winner || 'Finished'}</span>
           </div>
         ))}
