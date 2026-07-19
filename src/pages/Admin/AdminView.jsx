@@ -43,7 +43,7 @@ export default function AdminView() {
       await signInWithEmailAndPassword(auth, email, password);
       setAuthError('');
     } catch (err) {
-      setAuthError('Invalid email or password.');
+      setAuthError('Invalid email or password. Please try again.');
     }
   };
 
@@ -52,7 +52,7 @@ export default function AdminView() {
     setIsGenerating(true);
 
     const poolsMap = {};
-    const effectivePools = tourneyConfig.type === 'knockout' ? 1 : (tourneyConfig.numPools || 2);
+    const effectivePools = tourneyConfig.type === 'knockout' ? 1 : (parseInt(tourneyConfig.numPools) || 2);
     
     for (let i = 0; i < effectivePools; i++) {
       poolsMap[tourneyConfig.type === 'knockout' ? 'Main Bracket' : `Pool ${String.fromCharCode(65 + i)}`] = [];
@@ -79,13 +79,14 @@ export default function AdminView() {
         tournamentName: tourneyConfig.name,
         type: tourneyConfig.type,
         rules: { 
-          sets: Number(tourneyConfig.sets) || 3, 
-          points: Number(tourneyConfig.points) || 21,
-          tableTops: Number(tourneyConfig.tableTops) || 2
+          sets: parseInt(tourneyConfig.sets) || 3, 
+          points: parseInt(tourneyConfig.points) || 21,
+          tableTops: parseInt(tourneyConfig.tableTops) || 2
         },
         pools: poolsMap,
-        numCourts: Number(tourneyConfig.numCourts) || 2,
+        numCourts: parseInt(tourneyConfig.numCourts) || 2,
         refereeCode: generatedRefCode,
+        allowRefereeCourtManagement: false,
         createdAt: new Date().toISOString()
       };
       
@@ -107,7 +108,7 @@ export default function AdminView() {
         });
 
         const poolNamesList = Object.keys(poolsMap);
-        const tops = Number(tourneyConfig.tableTops) || 2;
+        const tops = parseInt(tourneyConfig.tableTops) || 2;
         const getOrdinal = (n) => {
           const s = ["th", "st", "nd", "rd"];
           const v = n % 100;
@@ -141,9 +142,9 @@ export default function AdminView() {
             tournamentId: safeDocId, 
             poolName: 'Round 1', 
             teamA: teams[i], 
-            teamB: hasOpponent ? teams[i+1] : 'BYE', // Handle uneven brackets
+            teamB: hasOpponent ? teams[i+1] : 'BYE', 
             teamAPoints: 0, teamBPoints: 0, currentSet: 1, completedSets: [],
-            status: hasOpponent ? 'pending' : 'completed', // Auto-finish BYEs
+            status: hasOpponent ? 'pending' : 'completed', 
             winner: hasOpponent ? null : teams[i],
             courtName: null, createdAt: serverTimestamp()
           });
@@ -196,7 +197,6 @@ export default function AdminView() {
   };
 
   const getPoolStandings = (poolName) => {
-    // FIX: For Knockouts, fetch ALL matches to calculate full bracket stats correctly
     const tourneyMatches = activeTournament?.type === 'knockout' 
       ? matches.filter(m => m.tournamentId === activeTournament?.id)
       : matches.filter(m => m.tournamentId === activeTournament?.id && m.poolName === poolName);
@@ -246,9 +246,6 @@ export default function AdminView() {
       });
   };
 
-  // ----------------------------------------------------
-  // KNOCKOUT ENGINE: PROGRESS TEAMS TO THE NEXT ROUND
-  // ----------------------------------------------------
   const handleGenerateNextRound = async () => {
     const tourneyMatches = matches.filter(m => m.tournamentId === activeTournament?.id);
     
@@ -265,17 +262,13 @@ export default function AdminView() {
     if (maxRound === 0) return alert("No active rounds found.");
 
     const currentRoundMatches = tourneyMatches.filter(m => m.poolName === `Round ${maxRound}`);
-    
-    // Sort so the bracket flow pairs people up in order
     currentRoundMatches.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
 
-    // Ensure all current round matches are completed
     const incomplete = currentRoundMatches.filter(m => m.status !== 'completed');
     if (incomplete.length > 0) {
       return alert(`Cannot generate next round! ${incomplete.length} match(es) in Round ${maxRound} are still pending or active.`);
     }
 
-    // Extract winners and pair them up
     const advancingTeams = currentRoundMatches.map(m => m.winner);
     if (advancingTeams.length === 1) return alert(`Tournament is complete! ${advancingTeams[0]} is the Champion!`);
 
@@ -292,7 +285,7 @@ export default function AdminView() {
         teamA: advancingTeams[i],
         teamB: hasOpponent ? advancingTeams[i+1] : 'BYE',
         teamAPoints: 0, teamBPoints: 0, currentSet: 1, completedSets: [],
-        status: hasOpponent ? 'pending' : 'completed', // Auto-advance odd teams
+        status: hasOpponent ? 'pending' : 'completed', 
         winner: hasOpponent ? null : advancingTeams[i],
         courtName: null, createdAt: serverTimestamp()
       });
@@ -302,9 +295,6 @@ export default function AdminView() {
     alert(`${nextRoundName} has been generated successfully!`);
   };
 
-  // ----------------------------------------------------
-  // ROUND ROBIN ENGINE: PLAYOFF RESOLUTION
-  // ----------------------------------------------------
   const handleAutoResolve = async () => {
     if (!window.confirm("Auto-resolve bracket? This will overwrite placeholders.")) return;
 
@@ -391,6 +381,11 @@ export default function AdminView() {
       <div className="p-4 bg-white rounded-xl shadow-sm max-w-sm mx-auto mt-10">
         <h2 className="text-2xl font-bold mb-4 text-center">Admin Login</h2>
         <form onSubmit={handleLogin} className="space-y-4">
+          {authError && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-3 text-red-700 text-sm font-bold">
+              {authError}
+            </div>
+          )}
           <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border p-2 rounded" required />
           <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border p-2 rounded" required />
           <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold">Login</button>
@@ -452,14 +447,19 @@ export default function AdminView() {
             </select>
             
             <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Total Teams</label><input type="number" value={tourneyConfig.numTeams} onChange={(e) => setTourneyConfig({...tourneyConfig, numTeams: parseInt(e.target.value) || ''})} className="w-full border p-2 rounded mt-1" /></div>
+              {/* NOTE: Updated inputs to accept empty strings allowing users to delete values smoothly */}
+              <div><label className="text-xs font-bold text-gray-500 uppercase">Total Teams</label><input type="number" value={tourneyConfig.numTeams} onChange={(e) => setTourneyConfig({...tourneyConfig, numTeams: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
+              <div><label className="text-xs font-bold text-gray-500 uppercase">Courts</label><input type="number" value={tourneyConfig.numCourts} onChange={(e) => setTourneyConfig({...tourneyConfig, numCourts: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
+              
+              <div><label className="text-xs font-bold text-gray-500 uppercase">Sets (Best Of)</label><input type="number" min="1" step="2" value={tourneyConfig.sets} onChange={(e) => setTourneyConfig({...tourneyConfig, sets: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
+              <div><label className="text-xs font-bold text-gray-500 uppercase">Points per Set</label><input type="number" min="1" value={tourneyConfig.points} onChange={(e) => setTourneyConfig({...tourneyConfig, points: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
+              
               {tourneyConfig.type === 'round-robin' && (
-                <div><label className="text-xs font-bold text-gray-500 uppercase">Pools (Even Only)</label><input type="number" min="2" step="2" value={tourneyConfig.numPools} onChange={(e) => setTourneyConfig({...tourneyConfig, numPools: parseInt(e.target.value) || ''})} className="w-full border p-2 rounded mt-1" /></div>
+                <div><label className="text-xs font-bold text-gray-500 uppercase">Pools (Even Only)</label><input type="number" min="2" step="2" value={tourneyConfig.numPools} onChange={(e) => setTourneyConfig({...tourneyConfig, numPools: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
               )}
               {tourneyConfig.type === 'round-robin' && (
-                <div><label className="text-xs font-bold text-blue-600 uppercase">Table Tops</label><input type="number" min="1" value={tourneyConfig.tableTops} onChange={(e) => setTourneyConfig({...tourneyConfig, tableTops: parseInt(e.target.value) || ''})} className="w-full border-2 border-blue-200 p-2 rounded mt-1" /></div>
+                <div><label className="text-xs font-bold text-blue-600 uppercase">Table Tops</label><input type="number" min="1" value={tourneyConfig.tableTops} onChange={(e) => setTourneyConfig({...tourneyConfig, tableTops: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border-2 border-blue-200 p-2 rounded mt-1" /></div>
               )}
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Courts</label><input type="number" value={tourneyConfig.numCourts} onChange={(e) => setTourneyConfig({...tourneyConfig, numCourts: parseInt(e.target.value) || ''})} className="w-full border p-2 rounded mt-1" /></div>
               
               {tourneyConfig.type === 'round-robin' && (
                 <div className="col-span-2 mt-2 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
@@ -500,22 +500,23 @@ export default function AdminView() {
             
             <button 
               onClick={() => { 
+                const totalTeams = parseInt(tourneyConfig.numTeams) || 4;
                 if (tourneyConfig.type === 'round-robin' && tourneyConfig.assignmentMode === 'manual') {
-                  const effectivePools = tourneyConfig.numPools || 2;
+                  const effectivePools = parseInt(tourneyConfig.numPools) || 2;
                   const initialManual = {};
                   for(let i=0; i<effectivePools; i++) {
                      const poolName = `Pool ${String.fromCharCode(65 + i)}`;
-                     let count = Math.floor(tourneyConfig.numTeams / effectivePools);
-                     if (i < tourneyConfig.numTeams % effectivePools) count++; 
+                     let count = Math.floor(totalTeams / effectivePools);
+                     if (i < totalTeams % effectivePools) count++; 
                      initialManual[poolName] = Array(count).fill('');
                   }
                   setManualTeams(initialManual);
                 } else {
-                  setTeamNames(Array(tourneyConfig.numTeams || 4).fill('')); 
+                  setTeamNames(Array(totalTeams).fill('')); 
                 }
                 setView('wizard-teams'); 
               }} 
-              disabled={!tourneyConfig.name || (tourneyConfig.type === 'round-robin' && tourneyConfig.numPools % 2 !== 0)} 
+              disabled={!tourneyConfig.name || (tourneyConfig.type === 'round-robin' && (!tourneyConfig.numPools || parseInt(tourneyConfig.numPools) % 2 !== 0))} 
               className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
             >
               Next →
@@ -549,7 +550,7 @@ export default function AdminView() {
               </div>
             ) : (
               <div className="space-y-3 mb-6 max-h-[50vh] overflow-y-auto">
-                {Array.from({ length: tourneyConfig.numTeams || 4 }).map((_, index) => (
+                {Array.from({ length: parseInt(tourneyConfig.numTeams) || 4 }).map((_, index) => (
                   <input key={index} type="text" value={teamNames[index] || ''} onChange={(e) => { const newNames = [...teamNames]; newNames[index] = e.target.value; setTeamNames(newNames); }} placeholder={`Team ${index + 1}`} className="w-full border p-2 rounded shadow-sm" />
                 ))}
               </div>
@@ -579,12 +580,14 @@ export default function AdminView() {
   // ==========================================
   // RENDER: TOURNAMENT DETAILS & SCHEDULER
   // ==========================================
-  const tourneyMatches = matches.filter(m => m.tournamentId === activeTournament?.id);
+  const liveActiveTournament = tournaments.find(t => t.id === activeTournament?.id) || activeTournament;
+  
+  const tourneyMatches = matches.filter(m => m.tournamentId === liveActiveTournament?.id);
   const pendingMatches = tourneyMatches.filter(m => m.status === 'pending');
   const activeCourtsMatches = tourneyMatches.filter(m => m.status === 'active');
   const completedMatches = tourneyMatches.filter(m => m.status === 'completed');
 
-  const standardPools = Object.keys(activeTournament?.pools || {});
+  const standardPools = Object.keys(liveActiveTournament?.pools || {});
   const hasCrossovers = tourneyMatches.some(m => m.poolName === 'Knockout - Crossover');
   const hasFinal = tourneyMatches.some(m => m.poolName === 'Final');
   
@@ -592,7 +595,6 @@ export default function AdminView() {
   if (hasCrossovers) allDisplayPools.push('Knockout - Crossover');
   if (hasFinal) allDisplayPools.push('Final');
 
-  // Identify Champion for UI highlights
   const finalMatch = tourneyMatches.find(m => m.poolName === 'Final' && m.status === 'completed');
   const knockoutChampion = finalMatch ? finalMatch.winner : null;
 
@@ -601,23 +603,22 @@ export default function AdminView() {
       <div className="flex justify-between items-start mb-6 border-b pb-4">
         <div>
           <button onClick={() => setView('hub')} className="text-xs text-blue-600 font-bold uppercase mb-1 hover:underline">← Back to Hub</button>
-          <h2 className="text-2xl font-bold text-gray-800">{activeTournament?.tournamentName}</h2>
+          <h2 className="text-2xl font-bold text-gray-800">{liveActiveTournament?.tournamentName}</h2>
         </div>
         <div className="text-right bg-blue-50 p-3 rounded-lg border border-blue-100 min-w-[140px]">
           <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">Referee Code</p>
-          <p className="text-2xl font-mono font-bold tracking-widest text-gray-800">{activeTournament?.refereeCode || 'N/A'}</p>
+          <p className="text-2xl font-mono font-bold tracking-widest text-gray-800">{liveActiveTournament?.refereeCode || 'N/A'}</p>
         </div>
       </div>
 
-      {activeTournament && (
+      {liveActiveTournament && (
         <div className="mb-8 border-b pb-6">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-sm font-bold text-gray-500 uppercase">
-              {activeTournament.type === 'knockout' ? 'Live Tournament Standings' : 'Live Pool Standings & Playoffs'}
+              {liveActiveTournament.type === 'knockout' ? 'Live Tournament Standings' : 'Live Pool Standings & Playoffs'}
             </h3>
             
-            {/* Contextual Smart Resolution Button */}
-            {activeTournament.type === 'round-robin' ? (
+            {liveActiveTournament.type === 'round-robin' ? (
               <button onClick={handleAutoResolve} className="bg-purple-600 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors">
                 ⚡ Auto-Resolve Knockouts
               </button>
@@ -632,7 +633,7 @@ export default function AdminView() {
             {allDisplayPools.map(poolName => {
               const standings = getPoolStandings(poolName);
               if (standings.length === 0) return null;
-              const isKnockout = activeTournament.type === 'knockout';
+              const isKnockout = liveActiveTournament.type === 'knockout';
 
               return (
                 <div key={poolName} className="border rounded-lg overflow-hidden bg-white shadow-sm overflow-x-auto w-full">
@@ -654,7 +655,7 @@ export default function AdminView() {
                       {standings.map((stat, idx) => {
                         const isChampion = (poolName === 'Final' && idx === 0 && stat.won > 0) || (isKnockout && stat.team === knockoutChampion);
                         const isKnockoutWinner = poolName === 'Knockout - Crossover' && stat.won > 0;
-                        const isPoolQualifier = standardPools.includes(poolName) && idx < activeTournament.rules.tableTops;
+                        const isPoolQualifier = standardPools.includes(poolName) && idx < liveActiveTournament.rules.tableTops;
                         const isEliminated = isKnockout && stat.losses > 0;
                         
                         return (
@@ -666,7 +667,6 @@ export default function AdminView() {
                             <td className="px-2 py-2 text-center text-gray-600">{stat.setsWon}</td>
                             <td className="px-2 py-2 text-center font-bold text-red-500">{stat.losses}</td>
                             
-                            {/* Knockout In/Out Status Column */}
                             {isKnockout && (
                               <td className={`px-2 py-2 text-center font-bold ${isEliminated ? 'text-red-500' : 'text-green-500'}`}>
                                 {isEliminated ? 'OUT' : 'IN'}
@@ -689,9 +689,30 @@ export default function AdminView() {
       )}
 
       {/* --- SMART COURT MANAGER --- */}
-      <h3 className="text-sm font-bold text-gray-500 uppercase mb-3">Court Manager</h3>
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-sm font-bold text-gray-500 uppercase">Court Manager</h3>
+        
+        <label className="flex items-center cursor-pointer">
+          <span className="mr-2 text-xs font-bold text-gray-600 uppercase">Referee Assign</span>
+          <div className="relative">
+            <input 
+              type="checkbox" 
+              className="sr-only" 
+              checked={liveActiveTournament?.allowRefereeCourtManagement || false} 
+              onChange={async (e) => {
+                await updateDoc(doc(db, 'tournaments', liveActiveTournament.id), { 
+                  allowRefereeCourtManagement: e.target.checked 
+                });
+              }} 
+            />
+            <div className={`block w-10 h-6 rounded-full transition-colors ${liveActiveTournament?.allowRefereeCourtManagement ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+            <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${liveActiveTournament?.allowRefereeCourtManagement ? 'translate-x-4' : ''}`}></div>
+          </div>
+        </label>
+      </div>
+      
       <div className="space-y-3 mb-8">
-        {Array.from({ length: activeTournament?.numCourts || 2 }).map((_, i) => {
+        {Array.from({ length: liveActiveTournament?.numCourts || 2 }).map((_, i) => {
           const courtName = `Court ${i + 1}`;
           const matchOnCourt = activeCourtsMatches.find(m => m.courtName === courtName);
 
@@ -731,7 +752,7 @@ export default function AdminView() {
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-sm font-bold text-gray-500 uppercase">Pending Matches ({pendingMatches.length})</h3>
         
-        {completedMatches.filter(m => m.poolName === 'Knockout - Crossover').length === 2 && !matches.find(m => m.tournamentId === activeTournament?.id && m.poolName === 'Final') && (
+        {completedMatches.filter(m => m.poolName === 'Knockout - Crossover').length === 2 && !matches.find(m => m.tournamentId === liveActiveTournament?.id && m.poolName === 'Final') && (
           <button onClick={handleCreateFinal} className="bg-yellow-500 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition-colors">
             🏆 Generate Final Match
           </button>
