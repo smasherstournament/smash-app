@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Minus, CheckCircle, Trophy, Lock } from 'lucide-react';
 import { db } from '../../config/firebase';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, writeBatch, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function RefereeView() {
   const [tournaments, setTournaments] = useState([]);
   const [selectedTournamentId, setSelectedTournamentId] = useState(null);
   
-  // --- NEW AUTH STATE ---
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [pinCode, setPinCode] = useState('');
   const [pinError, setPinError] = useState('');
 
   const [matches, setMatches] = useState([]);
   const [selectedMatchId, setSelectedMatchId] = useState(null);
+  
+  const [selectedPendingMatch, setSelectedPendingMatch] = useState({});
 
-  // 1. Listen for active tournaments and matches
   useEffect(() => {
     const unsubTournaments = onSnapshot(collection(db, 'tournaments'), (snapshot) => {
       setTournaments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -28,7 +28,15 @@ export default function RefereeView() {
     return () => { unsubTournaments(); unsubMatches(); };
   }, []);
 
-  // 2. Score and Match Logic
+  const parentTournament = tournaments.find(t => t.id === selectedTournamentId);
+  const tourneyMatches = matches.filter(m => m.tournamentId === selectedTournamentId);
+  const pendingMatches = tourneyMatches.filter(m => m.status === 'pending');
+  const activeCourts = tourneyMatches.filter(m => m.status === 'active');
+  const completedMatches = tourneyMatches.filter(m => m.status === 'completed');
+
+  // ==========================================
+  // SCORING LOGIC
+  // ==========================================
   const updateScore = async (team, increment) => {
     const match = matches.find(m => m.id === selectedMatchId);
     if (!match || match.status === 'completed') return;
@@ -93,6 +101,203 @@ export default function RefereeView() {
   };
 
   // ==========================================
+  // COURT ASSIGNMENT LOGIC
+  // ==========================================
+  const assignMatchToCourt = async (courtIndex) => {
+    const courtName = `Court ${courtIndex + 1}`;
+    const matchIdToAssign = selectedPendingMatch[courtName];
+    if (!matchIdToAssign) return alert("Please select a pending match first.");
+    await updateDoc(doc(db, 'matches', matchIdToAssign), { status: 'active', courtName: courtName });
+    setSelectedPendingMatch(prev => ({...prev, [courtName]: ''}));
+  };
+
+  const unassignMatch = async (matchId, e) => {
+    e.stopPropagation(); 
+    if (window.confirm("Remove this match from the court?")) {
+      await updateDoc(doc(db, 'matches', matchId), { status: 'pending', courtName: null, teamAPoints: 0, teamBPoints: 0 });
+    }
+  };
+
+  // ==========================================
+  // TOURNAMENT GENERATION LOGIC 
+  // ==========================================
+  const getPoolStandings = (poolName) => {
+    const targetMatches = parentTournament?.type === 'knockout' 
+      ? matches.filter(m => m.tournamentId === parentTournament?.id)
+      : matches.filter(m => m.tournamentId === parentTournament?.id && m.poolName === poolName);
+    
+    let teamNames = parentTournament?.pools?.[poolName] || [];
+    if (teamNames.length === 0) {
+      const uniqueTeams = new Set();
+      targetMatches.forEach(m => {
+        if (m.teamA) uniqueTeams.add(m.teamA);
+        if (m.teamB && m.teamB !== 'BYE') uniqueTeams.add(m.teamB);
+      });
+      teamNames = Array.from(uniqueTeams);
+    }
+
+    let stats = teamNames.map(t => ({ team: t, won: 0, losses: 0, setsWon: 0, pointsFor: 0, pointsAgainst: 0 }));
+    
+    const completedTourneyMatches = targetMatches.filter(m => m.status === 'completed');
+    completedTourneyMatches.forEach(match => {
+      const winnerStat = stats.find(s => s.team === match.winner);
+      const loserStat = stats.find(s => s.team !== match.winner && (s.team === match.teamA || s.team === match.teamB) && s.team !== 'BYE');
+      
+      if (winnerStat) winnerStat.won += 1;
+      if (loserStat) loserStat.losses += 1;
+
+      match.completedSets?.forEach(set => {
+        const teamAStat = stats.find(s => s.team === match.teamA);
+        const teamBStat = stats.find(s => s.team === match.teamB);
+        if (teamAStat) {
+          if (set.winner === 'A') teamAStat.setsWon += 1;
+          teamAStat.pointsFor += set.teamA;
+          teamAStat.pointsAgainst += set.teamB;
+        }
+        if (teamBStat && teamBStat.team !== 'BYE') {
+          if (set.winner === 'B') teamBStat.setsWon += 1;
+          teamBStat.pointsFor += set.teamB;
+          teamBStat.pointsAgainst += set.teamA;
+        }
+      });
+    });
+
+    return stats
+      .map(s => ({ ...s, pointDiff: s.pointsFor - s.pointsAgainst }))
+      .sort((a, b) => {
+        if (b.won !== a.won) return b.won - a.won;       
+        if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon; 
+        return b.pointDiff - a.pointDiff;                
+      });
+  };
+
+  const handleGenerateNextRound = async () => {
+    let maxRound = 0;
+    tourneyMatches.forEach(m => {
+      if (m.poolName.startsWith('Round ')) {
+        const r = parseInt(m.poolName.replace('Round ', ''));
+        if (r > maxRound) maxRound = r;
+      }
+      if (m.poolName === 'Final') maxRound = 999;
+    });
+
+    if (maxRound === 999) return alert("Tournament is already in the Final phase!");
+    if (maxRound === 0) return alert("No active rounds found.");
+
+    const currentRoundMatches = tourneyMatches.filter(m => m.poolName === `Round ${maxRound}`);
+    currentRoundMatches.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+
+    const incomplete = currentRoundMatches.filter(m => m.status !== 'completed');
+    if (incomplete.length > 0) {
+      return alert(`Cannot generate next round! ${incomplete.length} match(es) in Round ${maxRound} are still pending or active.`);
+    }
+
+    const advancingTeams = currentRoundMatches.map(m => m.winner);
+    if (advancingTeams.length === 1) return alert(`Tournament is complete! ${advancingTeams[0]} is the Champion!`);
+
+    const isFinal = advancingTeams.length === 2;
+    const nextRoundName = isFinal ? 'Final' : `Round ${maxRound + 1}`;
+
+    const batch = writeBatch(db);
+    for (let i = 0; i < advancingTeams.length; i += 2) {
+      const hasOpponent = !!advancingTeams[i+1];
+      const matchRef = doc(collection(db, 'matches'));
+      batch.set(matchRef, {
+        tournamentId: parentTournament.id,
+        poolName: nextRoundName,
+        teamA: advancingTeams[i],
+        teamB: hasOpponent ? advancingTeams[i+1] : 'BYE',
+        teamAPoints: 0, teamBPoints: 0, currentSet: 1, completedSets: [],
+        status: hasOpponent ? 'pending' : 'completed', 
+        winner: hasOpponent ? null : advancingTeams[i],
+        courtName: null, createdAt: serverTimestamp()
+      });
+    }
+
+    await batch.commit();
+    alert(`${nextRoundName} has been generated successfully!`);
+  };
+
+  const handleAutoResolve = async () => {
+    if (!window.confirm("Auto-resolve bracket? This will overwrite placeholders.")) return;
+
+    const batch = writeBatch(db);
+    const crossoverMatches = tourneyMatches.filter(m => m.poolName === 'Knockout - Crossover' && m.status === 'pending');
+    
+    const allStandings = {};
+    Object.keys(parentTournament.pools).forEach(poolName => {
+      allStandings[poolName] = getPoolStandings(poolName);
+    });
+
+    const regex = /(\d+)(st|nd|rd|th) Pool ([A-Z])/;
+
+    crossoverMatches.forEach(match => {
+      let updatedTeamA = match.teamA;
+      let updatedTeamB = match.teamB;
+
+      const matchA = match.teamA.match(regex);
+      if (matchA) {
+        const rankIndex = parseInt(matchA[1]) - 1;
+        const poolName = `Pool ${matchA[3]}`;
+        if (allStandings[poolName] && allStandings[poolName][rankIndex]) {
+          updatedTeamA = allStandings[poolName][rankIndex].team;
+        }
+      }
+
+      const matchB = match.teamB.match(regex);
+      if (matchB) {
+        const rankIndex = parseInt(matchB[1]) - 1;
+        const poolName = `Pool ${matchB[3]}`;
+        if (allStandings[poolName] && allStandings[poolName][rankIndex]) {
+          updatedTeamB = allStandings[poolName][rankIndex].team;
+        }
+      }
+
+      const matchRef = doc(db, 'matches', match.id);
+      batch.update(matchRef, { teamA: updatedTeamA, teamB: updatedTeamB });
+    });
+
+    await batch.commit();
+    alert("Bracket resolved successfully!");
+  };
+
+  const handleCreateFinal = async () => {
+    const crossoverMatches = tourneyMatches.filter(m => m.poolName === 'Knockout - Crossover' && m.status === 'completed');
+    
+    if (crossoverMatches.length !== 2) {
+      return alert(`You need exactly 2 completed crossover matches to automatically create a Final. Currently have ${crossoverMatches.length}.`);
+    }
+
+    const teamA = crossoverMatches[0].winner;
+    const teamB = crossoverMatches[1].winner;
+
+    if (!teamA || !teamB) {
+      return alert("One or both crossover matches are missing a winner!");
+    }
+
+    const existingFinal = tourneyMatches.find(m => m.poolName === 'Final');
+    if (existingFinal) return alert("The Final match has already been generated!");
+
+    if (window.confirm(`Ready to generate the Final match: ${teamA} vs ${teamB}?`)) {
+      await addDoc(collection(db, 'matches'), {
+        tournamentId: parentTournament.id,
+        poolName: 'Final',
+        teamA: teamA,
+        teamB: teamB,
+        teamAPoints: 0,
+        teamBPoints: 0,
+        currentSet: 1,
+        completedSets: [],
+        status: 'pending',
+        courtName: null,
+        createdAt: serverTimestamp()
+      });
+      alert("Final match added to the Pending Queue!");
+    }
+  };
+
+
+  // ==========================================
   // RENDER SCREEN 1: TOURNAMENT SELECTION
   // ==========================================
   if (!selectedTournamentId) {
@@ -108,7 +313,7 @@ export default function RefereeView() {
                 key={tourney.id} 
                 onClick={() => {
                   setSelectedTournamentId(tourney.id);
-                  setIsAuthorized(false); // Reset auth when picking a new tournament
+                  setIsAuthorized(false); 
                   setPinCode('');
                   setPinError('');
                 }} 
@@ -116,7 +321,7 @@ export default function RefereeView() {
               >
                 <div>
                   <div className="font-bold text-lg text-gray-800">{tourney.tournamentName || 'Unnamed Tournament'}</div>
-                  <div className="text-sm text-gray-500 capitalize">{tourney.type?.replace('-', ' ')} • Best of {tourney.rules?.sets}</div>
+                  <div className="text-sm text-gray-500 capitalize">{tourney.type?.replace('-', ' ')} • Best of {tourney.rules?.sets || 3}</div>
                 </div>
                 <Lock className="text-gray-300" size={20} />
               </button>
@@ -128,14 +333,11 @@ export default function RefereeView() {
   }
 
   // ==========================================
-  // RENDER SCREEN 1.5: PIN CODE ENTRY (NEW)
+  // RENDER SCREEN 1.5: PIN CODE ENTRY 
   // ==========================================
-  const parentTournament = tournaments.find(t => t.id === selectedTournamentId);
-
   if (selectedTournamentId && !isAuthorized) {
     const handlePinSubmit = (e) => {
       e.preventDefault();
-      // Bypass if no code was set on old tournaments, otherwise check code
       if (!parentTournament.refereeCode || pinCode === parentTournament.refereeCode) {
         setIsAuthorized(true);
         setPinError('');
@@ -187,30 +389,93 @@ export default function RefereeView() {
   // RENDER SCREEN 2: COURT SELECTION
   // ==========================================
   if (!selectedMatchId && isAuthorized) {
-    // Only show active matches that have been assigned a court by the Admin
-    const activeCourts = matches.filter(m => m.tournamentId === selectedTournamentId && m.status === 'active');
-    
     return (
       <div className="p-4 bg-white rounded-xl shadow-sm min-h-[60vh]">
         <button onClick={() => setSelectedTournamentId(null)} className="text-xs text-blue-600 font-bold uppercase mb-4 block">← Back to Tournaments</button>
-        <h2 className="text-xl font-bold mb-1 text-gray-800">{parentTournament?.tournamentName}</h2>
-        <h3 className="text-md font-semibold text-gray-500 mb-4">Select Assigned Court</h3>
         
-        {activeCourts.length === 0 ? (
-          <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
-            <p className="text-yellow-700 text-sm font-bold mb-1">No matches assigned!</p>
-            <p className="text-yellow-600 text-xs">Waiting for Admin to assign matches to courts.</p>
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2 className="text-xl font-bold mb-1 text-gray-800">{parentTournament?.tournamentName}</h2>
+            <h3 className="text-md font-semibold text-gray-500">Select Assigned Court</h3>
+          </div>
+          
+          {parentTournament?.allowRefereeCourtManagement && (
+            <div className="flex flex-col items-end gap-2">
+              {parentTournament.type === 'knockout' ? (
+                <button onClick={handleGenerateNextRound} className="bg-purple-600 text-white px-3 py-1.5 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors whitespace-nowrap">
+                  ⚡ Generate Next Round
+                </button>
+              ) : (
+                <>
+                  <button onClick={handleAutoResolve} className="bg-purple-600 text-white px-3 py-1.5 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors whitespace-nowrap">
+                    ⚡ Auto-Resolve
+                  </button>
+                  {completedMatches.filter(m => m.poolName === 'Knockout - Crossover').length === 2 && !tourneyMatches.find(m => m.poolName === 'Final') && (
+                    <button onClick={handleCreateFinal} className="bg-yellow-500 text-white px-3 py-1.5 text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition-colors whitespace-nowrap">
+                      🏆 Generate Final Match
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {parentTournament?.allowRefereeCourtManagement ? (
+          <div className="space-y-4">
+            {Array.from({ length: parentTournament.numCourts || 2 }).map((_, i) => {
+              const courtName = `Court ${i + 1}`;
+              const matchOnCourt = activeCourts.find(m => m.courtName === courtName);
+
+              return (
+                <div key={courtName} className={`p-4 border-2 rounded-xl ${matchOnCourt ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
+                  <h4 className="font-bold text-gray-800 mb-3">{courtName}</h4>
+                  
+                  {matchOnCourt ? (
+                    <div>
+                      <button onClick={() => setSelectedMatchId(matchOnCourt.id)} className="w-full text-left bg-white p-3 rounded shadow-sm border mb-2 flex justify-between items-center hover:border-blue-500 active:bg-blue-100 transition-colors">
+                        <div>
+                          <div className="text-xs font-bold text-blue-600 mb-1">[{matchOnCourt.poolName}]</div>
+                          <div className="text-sm font-bold text-gray-800">{matchOnCourt.teamA} vs {matchOnCourt.teamB}</div>
+                        </div>
+                        <span className="text-blue-600 font-bold text-xs uppercase bg-blue-100 px-3 py-2 rounded-lg">Score →</span>
+                      </button>
+                      <button onClick={(e) => unassignMatch(matchOnCourt.id, e)} className="text-xs text-red-600 font-bold hover:underline py-1">Unassign Court</button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2 w-full">
+                      <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border-2 border-gray-200 p-3 rounded-lg text-sm w-full bg-white">
+                        <option value="">-- Select Pending Match --</option>
+                        {pendingMatches.map(m => (
+                          <option key={m.id} value={m.id}>[{m.poolName}] {m.teamA} vs {m.teamB}</option>
+                        ))}
+                      </select>
+                      <button onClick={() => assignMatchToCourt(i)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-bold text-sm w-full active:bg-blue-700 shadow-sm">Assign to {courtName}</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
-          <div className="space-y-3">
-            {activeCourts.map(match => (
-              <button key={match.id} onClick={() => setSelectedMatchId(match.id)} className="w-full text-left p-4 border-2 border-gray-100 rounded-xl hover:border-blue-500 active:bg-blue-50 transition-all flex justify-between items-center">
-                <div>
-                  <div className="font-bold text-lg text-gray-800">{match.courtName}</div>
-                  <div className="text-sm text-gray-500"><strong className="text-blue-600">[{match.poolName}]</strong> {match.teamA} vs {match.teamB}</div>
-                </div>
-              </button>
-            ))}
+          <div>
+            {activeCourts.length === 0 ? (
+              <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mt-4">
+                <p className="text-yellow-700 text-sm font-bold mb-1">No matches assigned!</p>
+                <p className="text-yellow-600 text-xs">Waiting for Admin to assign matches to courts.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 mt-4">
+                {activeCourts.map(match => (
+                  <button key={match.id} onClick={() => setSelectedMatchId(match.id)} className="w-full text-left p-4 border-2 border-gray-100 rounded-xl hover:border-blue-500 active:bg-blue-50 transition-all flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-lg text-gray-800">{match.courtName}</div>
+                      <div className="text-sm text-gray-500"><strong className="text-blue-600">[{match.poolName}]</strong> {match.teamA} vs {match.teamB}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -224,9 +489,23 @@ export default function RefereeView() {
   if (!activeMatch) return <div className="p-4 text-center">Loading match data...</div>;
 
   const maxSets = parentTournament.rules?.sets || 3;
+  const targetPoints = parentTournament.rules?.points || 21;
   const currentSetNum = activeMatch.currentSet || 1;
   const pastSets = activeMatch.completedSets || [];
   const isMatchCompleted = activeMatch.status === 'completed';
+
+  const pointsA = activeMatch.teamAPoints;
+  const pointsB = activeMatch.teamBPoints;
+  const capPoints = targetPoints + 9; 
+  
+  const isSetWonByA = (pointsA >= targetPoints && (pointsA - pointsB) >= 2) || pointsA === capPoints;
+  const isSetWonByB = (pointsB >= targetPoints && (pointsB - pointsA) >= 2) || pointsB === capPoints;
+  const isSetWon = isSetWonByA || isSetWonByB;
+
+  // 🔥 DEUCE & ADVANTAGE LOGIC
+  const isDeuce = !isSetWon && pointsA >= targetPoints - 1 && pointsB >= targetPoints - 1 && pointsA === pointsB && pointsA < capPoints;
+  const hasAdvantage = !isSetWon && pointsA >= targetPoints - 1 && pointsB >= targetPoints - 1 && Math.abs(pointsA - pointsB) === 1 && Math.max(pointsA, pointsB) < capPoints;
+  const advantageTeamName = pointsA > pointsB ? activeMatch.teamA : activeMatch.teamB;
 
   return (
     <div className="flex flex-col min-h-[85vh] bg-gray-50 p-2 rounded-xl">
@@ -241,7 +520,7 @@ export default function RefereeView() {
           </div>
         ) : (
           <p className="text-sm font-bold text-gray-500 uppercase mt-1">
-            Set {currentSetNum} of {maxSets}
+            Set {currentSetNum} of {maxSets} • Play to {targetPoints}
           </p>
         )}
       </div>
@@ -255,6 +534,27 @@ export default function RefereeView() {
           ))}
         </div>
       )}
+      
+      {/* 🔥 DYNAMIC BANNERS */}
+      {!isMatchCompleted && (
+        <>
+          {isSetWon && (
+            <div className="bg-green-100 border border-green-400 text-green-800 p-3 rounded-lg text-center font-bold mb-4 shadow-sm animate-pulse">
+              🎉 Set Finished! Please Freeze the Set.
+            </div>
+          )}
+          {isDeuce && (
+            <div className="bg-red-600 border-2 border-red-800 text-white p-3 rounded-lg text-center font-black tracking-widest mb-4 shadow-lg animate-pulse uppercase">
+              🔥 DEUCE! Win by 2 points!
+            </div>
+          )}
+          {hasAdvantage && (
+            <div className="bg-yellow-400 border-2 border-yellow-600 text-yellow-900 p-3 rounded-lg text-center font-black tracking-widest mb-4 shadow-lg animate-pulse uppercase">
+              ⚡ ADVANTAGE {advantageTeamName}!
+            </div>
+          )}
+        </>
+      )}
 
       <div className="flex-1 grid grid-cols-2 gap-4">
         {/* TEAM A */}
@@ -262,7 +562,11 @@ export default function RefereeView() {
           <div className="bg-blue-600 text-white p-3 rounded-t-xl text-center">
             <h3 className="font-semibold text-base truncate">{activeMatch.teamA}</h3>
           </div>
-          <button onClick={() => updateScore('A', 1)} disabled={isMatchCompleted} className="flex-1 bg-blue-100 active:bg-blue-200 text-blue-700 rounded-xl flex items-center justify-center shadow-inner transition-colors min-h-[160px] disabled:opacity-50">
+          <button 
+            onClick={() => updateScore('A', 1)} 
+            disabled={isMatchCompleted || isSetWon} 
+            className="flex-1 bg-blue-100 active:bg-blue-200 text-blue-700 rounded-xl flex items-center justify-center shadow-inner transition-colors min-h-[160px] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <span className="text-7xl font-bold">{isMatchCompleted ? '-' : activeMatch.teamAPoints}</span>
           </button>
           {!isMatchCompleted && (
@@ -277,7 +581,11 @@ export default function RefereeView() {
           <div className="bg-red-600 text-white p-3 rounded-t-xl text-center">
             <h3 className="font-semibold text-base truncate">{activeMatch.teamB}</h3>
           </div>
-          <button onClick={() => updateScore('B', 1)} disabled={isMatchCompleted} className="flex-1 bg-red-100 active:bg-red-200 text-red-700 rounded-xl flex items-center justify-center shadow-inner transition-colors min-h-[160px] disabled:opacity-50">
+          <button 
+            onClick={() => updateScore('B', 1)} 
+            disabled={isMatchCompleted || isSetWon} 
+            className="flex-1 bg-red-100 active:bg-red-200 text-red-700 rounded-xl flex items-center justify-center shadow-inner transition-colors min-h-[160px] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <span className="text-7xl font-bold">{isMatchCompleted ? '-' : activeMatch.teamBPoints}</span>
           </button>
           {!isMatchCompleted && (
@@ -289,7 +597,14 @@ export default function RefereeView() {
       </div>
 
       {!isMatchCompleted ? (
-        <button onClick={() => handleEndSet(activeMatch, maxSets)} className="mt-6 w-full bg-gray-800 text-white py-4 rounded-xl font-bold text-lg active:bg-gray-700 flex items-center justify-center">
+        <button 
+          onClick={() => handleEndSet(activeMatch, maxSets)} 
+          className={`mt-6 w-full text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center transition-all shadow-sm ${
+            isSetWon 
+              ? 'bg-green-600 active:bg-green-700 animate-pulse border-2 border-green-800' 
+              : 'bg-gray-800 active:bg-gray-700'
+          }`}
+        >
           <CheckCircle className="mr-2" /> 
           Freeze Set {currentSetNum}
         </button>
