@@ -3,6 +3,23 @@ import { db, auth } from '../../config/firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, setDoc, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, getDocs, writeBatch } from 'firebase/firestore';
 
+// 🔴 NEW: Smart function to generate N perfectly unique colors!
+const generateDynamicColor = (index, totalTeams) => {
+  // Divides the 360-degree color wheel equally among all teams
+  const hue = (index * 360) / totalTeams;
+  const saturation = 0.75; // 75% saturation for vibrant colors
+  const lightness = 0.50;  // 50% lightness so text remains readable
+
+  // Convert HSL to HEX for the color boxes
+  const a = saturation * Math.min(lightness, 1 - lightness);
+  const f = (n) => {
+    const k = (n + hue / 30) % 12;
+    const color = lightness - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+};
+
 export default function AdminView() {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState('');
@@ -12,12 +29,16 @@ export default function AdminView() {
   const [view, setView] = useState('hub'); 
   const [tournaments, setTournaments] = useState([]);
   const [activeTournament, setActiveTournament] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
   
   const [tourneyConfig, setTourneyConfig] = useState({ 
     name: '', sets: 3, points: 21, numTeams: 4, numPools: 2, numCourts: 2, tableTops: 2, type: 'round-robin', assignmentMode: 'auto'
   });
+  
   const [teamNames, setTeamNames] = useState([]);
+  const [teamColors, setTeamColors] = useState([]); 
   const [manualTeams, setManualTeams] = useState({});
+  const [manualColors, setManualColors] = useState({}); 
 
   const [matches, setMatches] = useState([]);
   const [selectedPendingMatch, setSelectedPendingMatch] = useState({});
@@ -52,6 +73,7 @@ export default function AdminView() {
     setIsGenerating(true);
 
     const poolsMap = {};
+    const finalTeamColors = {}; 
     const effectivePools = tourneyConfig.type === 'knockout' ? 1 : (parseInt(tourneyConfig.numPools) || 2);
     
     for (let i = 0; i < effectivePools; i++) {
@@ -61,13 +83,17 @@ export default function AdminView() {
     if (tourneyConfig.type === 'round-robin' && tourneyConfig.assignmentMode === 'manual') {
       Object.keys(manualTeams).forEach(poolName => {
         manualTeams[poolName].forEach((team, idx) => {
-          poolsMap[poolName].push(team || `${poolName} Team ${idx + 1}`);
+          const tName = team || `${poolName} Team ${idx + 1}`;
+          poolsMap[poolName].push(tName);
+          finalTeamColors[tName] = manualColors[poolName]?.[idx] || '#3B82F6';
         });
       });
     } else {
       teamNames.forEach((team, index) => {
         const poolName = tourneyConfig.type === 'knockout' ? 'Main Bracket' : `Pool ${String.fromCharCode(65 + (index % effectivePools))}`;
-        poolsMap[poolName].push(team || `Team ${index + 1}`);
+        const tName = team || `Team ${index + 1}`;
+        poolsMap[poolName].push(tName);
+        finalTeamColors[tName] = teamColors[index] || '#3B82F6';
       });
     }
 
@@ -78,12 +104,14 @@ export default function AdminView() {
       const tourneyData = {
         tournamentName: tourneyConfig.name,
         type: tourneyConfig.type,
+        status: 'active',
         rules: { 
           sets: parseInt(tourneyConfig.sets) || 3, 
           points: parseInt(tourneyConfig.points) || 21,
           tableTops: parseInt(tourneyConfig.tableTops) || 2
         },
         pools: poolsMap,
+        teamColors: finalTeamColors, 
         numCourts: parseInt(tourneyConfig.numCourts) || 2,
         refereeCode: generatedRefCode,
         allowRefereeCourtManagement: false,
@@ -157,6 +185,8 @@ export default function AdminView() {
       setView('tournament-details');
       setTourneyConfig({ name: '', sets: 3, points: 21, numTeams: 4, numPools: 2, numCourts: 2, tableTops: 2, type: 'round-robin', assignmentMode: 'auto' });
       setManualTeams({});
+      setManualColors({});
+      setTeamColors([]);
     } catch (error) {
       alert("Failed to save tournament.");
     } finally {
@@ -165,7 +195,7 @@ export default function AdminView() {
   };
 
   const handleDeleteTournament = async (id) => {
-    if (window.confirm("Delete this tournament and ALL its matches?")) {
+    if (window.confirm("PERMANENT DELETE: Are you sure you want to completely erase this tournament and all its matches? (Consider Archiving instead!)")) {
       const q = query(collection(db, 'matches'), where("tournamentId", "==", id));
       const querySnapshot = await getDocs(q);
       const batch = writeBatch(db);
@@ -174,6 +204,14 @@ export default function AdminView() {
       
       await deleteDoc(doc(db, 'tournaments', id));
       if (activeTournament?.id === id) setView('hub');
+    }
+  };
+
+  const toggleArchiveTournament = async (id, currentStatus) => {
+    const newStatus = currentStatus === 'archived' ? 'active' : 'archived';
+    await updateDoc(doc(db, 'tournaments', id), { status: newStatus });
+    if (activeTournament?.id === id && newStatus === 'archived') {
+      setView('hub'); 
     }
   };
 
@@ -398,6 +436,8 @@ export default function AdminView() {
   // RENDER: HUB (TOURNAMENT LIST)
   // ==========================================
   if (view === 'hub') {
+    const displayTourneys = tournaments.filter(t => showArchived ? t.status === 'archived' : t.status !== 'archived');
+
     return (
       <div className="p-4 bg-white rounded-xl shadow-sm min-h-[70vh]">
         <div className="flex justify-between items-center mb-6">
@@ -405,16 +445,45 @@ export default function AdminView() {
           <button onClick={() => signOut(auth)} className="text-sm text-red-600 font-medium">Logout</button>
         </div>
         <button onClick={() => setView('wizard-config')} className="w-full mb-6 bg-blue-600 text-white py-3 rounded-lg font-bold shadow-sm">+ Create New Tournament</button>
+        
+        <div className="flex justify-center mb-4">
+          <div className="bg-gray-100 p-1 rounded-lg flex text-sm font-bold w-full max-w-xs">
+            <button 
+              onClick={() => setShowArchived(false)} 
+              className={`flex-1 py-1.5 rounded-md ${!showArchived ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:bg-gray-200'}`}
+            >
+              Active
+            </button>
+            <button 
+              onClick={() => setShowArchived(true)} 
+              className={`flex-1 py-1.5 rounded-md ${showArchived ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:bg-gray-200'}`}
+            >
+              Archived
+            </button>
+          </div>
+        </div>
+
         <div className="space-y-3">
-          {tournaments.map(t => (
+          {displayTourneys.length === 0 && (
+            <p className="text-center text-gray-500 py-6">No {showArchived ? 'archived' : 'active'} tournaments found.</p>
+          )}
+          {displayTourneys.map(t => (
             <div key={t.id} className="border p-4 rounded-lg flex justify-between items-center hover:bg-gray-50">
               <div>
                 <h4 className="font-bold text-lg">{t.tournamentName || 'Unnamed'}</h4>
                 <p className="text-xs text-gray-500 capitalize">{t.type === 'round-robin' ? 'Round Robin' : 'Knockout'}</p>
               </div>
               <div className="flex space-x-2">
-                <button onClick={() => { setActiveTournament(t); setView('tournament-details'); }} className="bg-gray-800 text-white px-4 py-2 rounded font-medium">Open</button>
-                <button onClick={() => handleDeleteTournament(t.id)} className="bg-red-100 text-red-600 px-3 py-2 rounded font-medium">X</button>
+                {!showArchived && (
+                  <button onClick={() => { setActiveTournament(t); setView('tournament-details'); }} className="bg-gray-800 text-white px-3 py-2 rounded font-medium text-sm">Open</button>
+                )}
+                <button 
+                  onClick={() => toggleArchiveTournament(t.id, t.status)} 
+                  className={`px-3 py-2 rounded font-medium text-sm ${showArchived ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}
+                >
+                  {showArchived ? 'Un-Archive' : 'Archive'}
+                </button>
+                <button onClick={() => handleDeleteTournament(t.id)} className="bg-red-100 text-red-600 px-3 py-2 rounded font-bold text-sm">X</button>
               </div>
             </div>
           ))}
@@ -447,7 +516,6 @@ export default function AdminView() {
             </select>
             
             <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-              {/* NOTE: Updated inputs to accept empty strings allowing users to delete values smoothly */}
               <div><label className="text-xs font-bold text-gray-500 uppercase">Total Teams</label><input type="number" value={tourneyConfig.numTeams} onChange={(e) => setTourneyConfig({...tourneyConfig, numTeams: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
               <div><label className="text-xs font-bold text-gray-500 uppercase">Courts</label><input type="number" value={tourneyConfig.numCourts} onChange={(e) => setTourneyConfig({...tourneyConfig, numCourts: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
               
@@ -501,18 +569,32 @@ export default function AdminView() {
             <button 
               onClick={() => { 
                 const totalTeams = parseInt(tourneyConfig.numTeams) || 4;
+                let colorIndexCounter = 0; 
+
                 if (tourneyConfig.type === 'round-robin' && tourneyConfig.assignmentMode === 'manual') {
                   const effectivePools = parseInt(tourneyConfig.numPools) || 2;
                   const initialManual = {};
+                  const initialManualColors = {};
                   for(let i=0; i<effectivePools; i++) {
                      const poolName = `Pool ${String.fromCharCode(65 + i)}`;
                      let count = Math.floor(totalTeams / effectivePools);
                      if (i < totalTeams % effectivePools) count++; 
                      initialManual[poolName] = Array(count).fill('');
+                     
+                     // 🔴 Auto-assign dynamically generated colors
+                     initialManualColors[poolName] = Array.from({length: count}).map(() => 
+                       generateDynamicColor(colorIndexCounter++, totalTeams)
+                     );
                   }
                   setManualTeams(initialManual);
+                  setManualColors(initialManualColors);
                 } else {
                   setTeamNames(Array(totalTeams).fill('')); 
+                  
+                  // 🔴 Auto-assign dynamically generated colors
+                  setTeamColors(Array.from({length: totalTeams}).map((_, i) => 
+                    generateDynamicColor(i, totalTeams)
+                  ));
                 }
                 setView('wizard-teams'); 
               }} 
@@ -531,18 +613,25 @@ export default function AdminView() {
                     <h4 className="font-bold text-blue-800 mb-3">{poolName}</h4>
                     <div className="space-y-2">
                       {manualTeams[poolName].map((team, idx) => (
-                        <input 
-                          key={idx} 
-                          type="text" 
-                          value={team} 
-                          onChange={(e) => { 
-                            const newManual = { ...manualTeams }; 
-                            newManual[poolName][idx] = e.target.value; 
-                            setManualTeams(newManual); 
-                          }} 
-                          placeholder={`${poolName} - Team ${idx + 1}`} 
-                          className="w-full border p-2 rounded shadow-sm focus:border-blue-500 focus:outline-none" 
-                        />
+                        <div key={idx} className="flex gap-2">
+                          {/* Visual Indicator of the perfectly unique assigned color */}
+                          <div 
+                            className="w-10 rounded border shadow-sm flex-shrink-0" 
+                            style={{ backgroundColor: manualColors[poolName]?.[idx] || '#3B82F6' }}
+                            title="Auto-assigned Team Color"
+                          />
+                          <input 
+                            type="text" 
+                            value={team} 
+                            onChange={(e) => { 
+                              const newManual = { ...manualTeams }; 
+                              newManual[poolName][idx] = e.target.value; 
+                              setManualTeams(newManual); 
+                            }} 
+                            placeholder={`${poolName} - Team ${idx + 1}`} 
+                            className="flex-1 border p-2 rounded shadow-sm focus:border-blue-500 focus:outline-none" 
+                          />
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -551,7 +640,25 @@ export default function AdminView() {
             ) : (
               <div className="space-y-3 mb-6 max-h-[50vh] overflow-y-auto">
                 {Array.from({ length: parseInt(tourneyConfig.numTeams) || 4 }).map((_, index) => (
-                  <input key={index} type="text" value={teamNames[index] || ''} onChange={(e) => { const newNames = [...teamNames]; newNames[index] = e.target.value; setTeamNames(newNames); }} placeholder={`Team ${index + 1}`} className="w-full border p-2 rounded shadow-sm" />
+                  <div key={index} className="flex gap-2">
+                    {/* Visual Indicator of the perfectly unique assigned color */}
+                    <div 
+                      className="w-10 rounded border shadow-sm flex-shrink-0" 
+                      style={{ backgroundColor: teamColors[index] || '#3B82F6' }}
+                      title="Auto-assigned Team Color"
+                    />
+                    <input 
+                      type="text" 
+                      value={teamNames[index] || ''} 
+                      onChange={(e) => { 
+                        const newNames = [...teamNames]; 
+                        newNames[index] = e.target.value; 
+                        setTeamNames(newNames); 
+                      }} 
+                      placeholder={`Team ${index + 1}`} 
+                      className="flex-1 border p-2 rounded shadow-sm focus:border-blue-500 focus:outline-none" 
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -660,7 +767,9 @@ export default function AdminView() {
                         
                         return (
                           <tr key={stat.team} className={isChampion ? "bg-yellow-100 font-bold" : (isKnockoutWinner || isPoolQualifier) ? "bg-green-50" : ""}>
-                            <td className={`px-3 py-2 font-medium ${isEliminated ? 'line-through text-gray-400' : ''}`}>
+                            <td className={`px-3 py-2 font-medium flex items-center ${isEliminated ? 'line-through text-gray-400' : ''}`}>
+                              {/* Display Team Color Dot */}
+                              <span className="w-3 h-3 rounded-full mr-2 inline-block" style={{ backgroundColor: liveActiveTournament.teamColors?.[stat.team] || '#2563EB' }}></span>
                               {stat.team} {isChampion && " 🏆"}
                             </td>
                             <td className="px-2 py-2 text-center font-bold">{stat.won}</td>
