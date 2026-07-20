@@ -28,7 +28,35 @@ export default function RefereeView() {
     return () => { unsubTournaments(); unsubMatches(); };
   }, []);
 
+  // ==========================================
+  // 🔴 SAFE HOOK PLACEMENT & DERIVED STATE
+  // Variables must be calculated before early returns!
+  // ==========================================
   const parentTournament = tournaments.find(t => t.id === selectedTournamentId);
+  const activeMatch = matches.find(m => m.id === selectedMatchId);
+
+  // Calculate Deuce & Advantage states at the top level
+  const targetPoints = parentTournament?.rules?.points || 21;
+  const pointsA = activeMatch?.teamAPoints || 0;
+  const pointsB = activeMatch?.teamBPoints || 0;
+  const capPoints = targetPoints + 9; 
+  
+  const isSetWonByA = (pointsA >= targetPoints && (pointsA - pointsB) >= 2) || pointsA === capPoints;
+  const isSetWonByB = (pointsB >= targetPoints && (pointsB - pointsA) >= 2) || pointsB === capPoints;
+  const isSetWon = isSetWonByA || isSetWonByB;
+
+  const isDeuce = !isSetWon && pointsA >= targetPoints - 1 && pointsB >= targetPoints - 1 && pointsA === pointsB && pointsA < capPoints;
+  const hasAdvantage = !isSetWon && pointsA >= targetPoints - 1 && pointsB >= targetPoints - 1 && Math.abs(pointsA - pointsB) === 1 && Math.max(pointsA, pointsB) < capPoints;
+
+  // 🔴 VIBRATION EFFECT (Safely placed before any "return" statements)
+  useEffect(() => {
+    if (selectedMatchId && activeMatch && (isDeuce || hasAdvantage || isSetWon)) {
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200]); // Pulsing vibration pattern
+      }
+    }
+  }, [isDeuce, hasAdvantage, isSetWon, selectedMatchId, activeMatch]);
+
   const tourneyMatches = matches.filter(m => m.tournamentId === selectedTournamentId);
   const pendingMatches = tourneyMatches.filter(m => m.status === 'pending');
   const activeCourts = tourneyMatches.filter(m => m.status === 'active');
@@ -38,10 +66,9 @@ export default function RefereeView() {
   // SCORING LOGIC
   // ==========================================
   const updateScore = async (team, increment) => {
-    const match = matches.find(m => m.id === selectedMatchId);
-    if (!match || match.status === 'completed') return;
+    if (!activeMatch || activeMatch.status === 'completed') return;
 
-    const currentScore = match[team === 'A' ? 'teamAPoints' : 'teamBPoints'];
+    const currentScore = activeMatch[team === 'A' ? 'teamAPoints' : 'teamBPoints'];
     const newScore = Math.max(0, currentScore + increment);
 
     const matchRef = doc(db, 'matches', selectedMatchId);
@@ -50,9 +77,9 @@ export default function RefereeView() {
     });
   };
 
-  const handleEndSet = async (activeMatch, maxSets) => {
-    const teamAPoints = activeMatch.teamAPoints;
-    const teamBPoints = activeMatch.teamBPoints;
+  const handleEndSet = async (matchData, maxSets) => {
+    const teamAPoints = matchData.teamAPoints;
+    const teamBPoints = matchData.teamBPoints;
 
     if (teamAPoints === teamBPoints) {
       alert("A set cannot end in a tie!");
@@ -62,8 +89,8 @@ export default function RefereeView() {
     if (!window.confirm("Are you sure you want to freeze this set? The scores will be locked.")) return;
 
     const matchRef = doc(db, 'matches', selectedMatchId);
-    const pastSets = activeMatch.completedSets || [];
-    const currentSetNum = activeMatch.currentSet || 1;
+    const pastSets = matchData.completedSets || [];
+    const currentSetNum = matchData.currentSet || 1;
 
     const setWinner = teamAPoints > teamBPoints ? 'A' : 'B';
 
@@ -83,7 +110,7 @@ export default function RefereeView() {
     const setsNeededToWin = Math.floor(maxSets / 2) + 1;
 
     if (setsWonA >= setsNeededToWin || setsWonB >= setsNeededToWin) {
-      const matchWinnerName = setsWonA >= setsNeededToWin ? activeMatch.teamA : activeMatch.teamB;
+      const matchWinnerName = setsWonA >= setsNeededToWin ? matchData.teamA : matchData.teamB;
       
       await updateDoc(matchRef, {
         completedSets: newPastSets,
@@ -98,6 +125,26 @@ export default function RefereeView() {
         teamBPoints: 0
       });
     }
+  };
+
+  const handleUndoLastSet = async (matchData) => {
+    if (!window.confirm("Undo the last set? This will revert the score to before it was frozen.")) return;
+    
+    const matchRef = doc(db, 'matches', selectedMatchId);
+    const pastSets = [...(matchData.completedSets || [])];
+    
+    if (pastSets.length === 0) return;
+    
+    const lastSet = pastSets.pop(); 
+    
+    await updateDoc(matchRef, {
+      completedSets: pastSets,
+      currentSet: matchData.currentSet > 1 ? matchData.currentSet - 1 : 1,
+      teamAPoints: lastSet.teamA,
+      teamBPoints: lastSet.teamB,
+      status: 'active',
+      winner: null 
+    });
   };
 
   // ==========================================
@@ -301,14 +348,16 @@ export default function RefereeView() {
   // RENDER SCREEN 1: TOURNAMENT SELECTION
   // ==========================================
   if (!selectedTournamentId) {
+    const activeTournamentsList = tournaments.filter(t => t.status !== 'archived');
+
     return (
       <div className="p-4 bg-white rounded-xl shadow-sm min-h-[60vh]">
         <h2 className="text-2xl font-bold mb-4">Select Tournament</h2>
-        {tournaments.length === 0 ? (
+        {activeTournamentsList.length === 0 ? (
           <p className="text-gray-500 italic">No active tournaments available.</p>
         ) : (
           <div className="space-y-3">
-            {tournaments.map(tourney => (
+            {activeTournamentsList.map(tourney => (
               <button 
                 key={tourney.id} 
                 onClick={() => {
@@ -391,7 +440,7 @@ export default function RefereeView() {
   if (!selectedMatchId && isAuthorized) {
     return (
       <div className="p-4 bg-white rounded-xl shadow-sm min-h-[60vh]">
-        <button onClick={() => setSelectedTournamentId(null)} className="text-xs text-blue-600 font-bold uppercase mb-4 block">← Back to Tournaments</button>
+        <button onClick={() => setSelectedTournamentId(null)} className="text-xs text-blue-600 font-bold uppercase mb-4 block hover:underline">← Back to Tournaments</button>
         
         <div className="flex justify-between items-start mb-4">
           <div>
@@ -436,7 +485,11 @@ export default function RefereeView() {
                       <button onClick={() => setSelectedMatchId(matchOnCourt.id)} className="w-full text-left bg-white p-3 rounded shadow-sm border mb-2 flex justify-between items-center hover:border-blue-500 active:bg-blue-100 transition-colors">
                         <div>
                           <div className="text-xs font-bold text-blue-600 mb-1">[{matchOnCourt.poolName}]</div>
-                          <div className="text-sm font-bold text-gray-800">{matchOnCourt.teamA} vs {matchOnCourt.teamB}</div>
+                          <div className="text-sm font-bold text-gray-800 flex items-center">
+                             <span className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: parentTournament.teamColors?.[matchOnCourt.teamA] || '#2563EB' }}></span>
+                             {matchOnCourt.teamA} vs {matchOnCourt.teamB}
+                             <span className="w-2 h-2 rounded-full ml-2" style={{ backgroundColor: parentTournament.teamColors?.[matchOnCourt.teamB] || '#2563EB' }}></span>
+                          </div>
                         </div>
                         <span className="text-blue-600 font-bold text-xs uppercase bg-blue-100 px-3 py-2 rounded-lg">Score →</span>
                       </button>
@@ -485,32 +538,21 @@ export default function RefereeView() {
   // ==========================================
   // RENDER SCREEN 3: ACTIVE SCORING UI
   // ==========================================
-  const activeMatch = matches.find(m => m.id === selectedMatchId);
   if (!activeMatch) return <div className="p-4 text-center">Loading match data...</div>;
 
   const maxSets = parentTournament.rules?.sets || 3;
-  const targetPoints = parentTournament.rules?.points || 21;
   const currentSetNum = activeMatch.currentSet || 1;
   const pastSets = activeMatch.completedSets || [];
   const isMatchCompleted = activeMatch.status === 'completed';
 
-  const pointsA = activeMatch.teamAPoints;
-  const pointsB = activeMatch.teamBPoints;
-  const capPoints = targetPoints + 9; 
-  
-  const isSetWonByA = (pointsA >= targetPoints && (pointsA - pointsB) >= 2) || pointsA === capPoints;
-  const isSetWonByB = (pointsB >= targetPoints && (pointsB - pointsA) >= 2) || pointsB === capPoints;
-  const isSetWon = isSetWonByA || isSetWonByB;
-
-  // 🔥 DEUCE & ADVANTAGE LOGIC
-  const isDeuce = !isSetWon && pointsA >= targetPoints - 1 && pointsB >= targetPoints - 1 && pointsA === pointsB && pointsA < capPoints;
-  const hasAdvantage = !isSetWon && pointsA >= targetPoints - 1 && pointsB >= targetPoints - 1 && Math.abs(pointsA - pointsB) === 1 && Math.max(pointsA, pointsB) < capPoints;
   const advantageTeamName = pointsA > pointsB ? activeMatch.teamA : activeMatch.teamB;
+  const colorTeamA = parentTournament?.teamColors?.[activeMatch.teamA] || '#2563EB'; 
+  const colorTeamB = parentTournament?.teamColors?.[activeMatch.teamB] || '#DC2626'; 
 
   return (
     <div className="flex flex-col min-h-[85vh] bg-gray-50 p-2 rounded-xl">
       <div className={`bg-white p-4 rounded-xl shadow-sm mb-4 text-center relative border-b-4 ${isMatchCompleted ? 'border-green-500' : 'border-blue-600'}`}>
-        <button onClick={() => setSelectedMatchId(null)} className="absolute left-4 top-4 text-sm text-blue-600 font-semibold">← Courts</button>
+        <button onClick={() => setSelectedMatchId(null)} className="absolute left-4 top-4 text-sm text-blue-600 font-semibold hover:underline">← Courts</button>
         <h2 className="text-xl font-bold text-gray-800 mt-6">{activeMatch.courtName}</h2>
         
         {isMatchCompleted ? (
@@ -535,7 +577,6 @@ export default function RefereeView() {
         </div>
       )}
       
-      {/* 🔥 DYNAMIC BANNERS */}
       {!isMatchCompleted && (
         <>
           {isSetWon && (
@@ -557,15 +598,15 @@ export default function RefereeView() {
       )}
 
       <div className="flex-1 grid grid-cols-2 gap-4">
-        {/* TEAM A */}
         <div className="flex flex-col space-y-3">
-          <div className="bg-blue-600 text-white p-3 rounded-t-xl text-center">
+          <div className="text-white p-3 rounded-t-xl text-center shadow" style={{ backgroundColor: colorTeamA }}>
             <h3 className="font-semibold text-base truncate">{activeMatch.teamA}</h3>
           </div>
           <button 
             onClick={() => updateScore('A', 1)} 
             disabled={isMatchCompleted || isSetWon} 
-            className="flex-1 bg-blue-100 active:bg-blue-200 text-blue-700 rounded-xl flex items-center justify-center shadow-inner transition-colors min-h-[160px] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 bg-white active:bg-gray-100 text-gray-800 border-2 rounded-xl flex items-center justify-center shadow-sm transition-colors min-h-[160px] disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ borderColor: colorTeamA }}
           >
             <span className="text-7xl font-bold">{isMatchCompleted ? '-' : activeMatch.teamAPoints}</span>
           </button>
@@ -576,15 +617,15 @@ export default function RefereeView() {
           )}
         </div>
 
-        {/* TEAM B */}
         <div className="flex flex-col space-y-3">
-          <div className="bg-red-600 text-white p-3 rounded-t-xl text-center">
+          <div className="text-white p-3 rounded-t-xl text-center shadow" style={{ backgroundColor: colorTeamB }}>
             <h3 className="font-semibold text-base truncate">{activeMatch.teamB}</h3>
           </div>
           <button 
             onClick={() => updateScore('B', 1)} 
             disabled={isMatchCompleted || isSetWon} 
-            className="flex-1 bg-red-100 active:bg-red-200 text-red-700 rounded-xl flex items-center justify-center shadow-inner transition-colors min-h-[160px] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 bg-white active:bg-gray-100 text-gray-800 border-2 rounded-xl flex items-center justify-center shadow-sm transition-colors min-h-[160px] disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ borderColor: colorTeamB }}
           >
             <span className="text-7xl font-bold">{isMatchCompleted ? '-' : activeMatch.teamBPoints}</span>
           </button>
@@ -611,6 +652,15 @@ export default function RefereeView() {
       ) : (
         <button onClick={() => setSelectedMatchId(null)} className="mt-6 w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg active:bg-blue-700 flex items-center justify-center shadow-md transition-colors">
           ← Back to Assigned Courts
+        </button>
+      )}
+
+      {(isMatchCompleted || pastSets.length > 0) && (
+        <button 
+          onClick={() => handleUndoLastSet(activeMatch)} 
+          className="mt-4 w-full bg-orange-100 text-orange-700 py-3 rounded-xl font-bold active:bg-orange-200 border border-orange-300 transition-colors"
+        >
+          ↺ Undo Last Frozen Set
         </button>
       )}
     </div>
