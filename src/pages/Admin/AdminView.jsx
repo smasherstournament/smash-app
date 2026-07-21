@@ -3,14 +3,12 @@ import { db, auth } from '../../config/firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, setDoc, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, getDocs, writeBatch } from 'firebase/firestore';
 
-// 🔴 NEW: Smart function to generate N perfectly unique colors!
+// 🔴 Smart function to generate N perfectly unique colors
 const generateDynamicColor = (index, totalTeams) => {
-  // Divides the 360-degree color wheel equally among all teams
   const hue = (index * 360) / totalTeams;
-  const saturation = 0.75; // 75% saturation for vibrant colors
-  const lightness = 0.50;  // 50% lightness so text remains readable
+  const saturation = 0.75; 
+  const lightness = 0.50;  
 
-  // Convert HSL to HEX for the color boxes
   const a = saturation * Math.min(lightness, 1 - lightness);
   const f = (n) => {
     const k = (n + hue / 30) % 12;
@@ -143,6 +141,9 @@ export default function AdminView() {
           return n + (s[(v - 20) % 10] || s[v] || s[0]);
         };
 
+        // 🔴 FIX: Intelligently label as Final if there are exactly 2 pools and 1 Top advancing
+        const isSingleFinal = poolNamesList.length === 2 && tops === 1;
+
         for (let p = 0; p < poolNamesList.length; p += 2) {
           const pool1 = poolNamesList[p];
           const pool2 = poolNamesList[p + 1];
@@ -152,7 +153,7 @@ export default function AdminView() {
               const matchRef = doc(collection(db, 'matches'));
               batch.set(matchRef, {
                 tournamentId: safeDocId, 
-                poolName: 'Knockout - Crossover', 
+                poolName: isSingleFinal ? 'Final' : 'Knockout - Crossover', 
                 teamA: `${getOrdinal(i)} ${pool1}`, 
                 teamB: `${getOrdinal(tops - i + 1)} ${pool2}`,
                 teamAPoints: 0, teamBPoints: 0, currentSet: 1, completedSets: [],
@@ -280,7 +281,9 @@ export default function AdminView() {
       .sort((a, b) => {
         if (b.won !== a.won) return b.won - a.won;       
         if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon; 
-        return b.pointDiff - a.pointDiff;                
+        if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff;
+        // 🔴 FIX: Stable sort fallback by team name ensures tables don't randomly reshuffle on live updates
+        return a.team.localeCompare(b.team);                
       });
   };
 
@@ -333,20 +336,52 @@ export default function AdminView() {
     alert(`${nextRoundName} has been generated successfully!`);
   };
 
+  // 🔴 FIX: Smart Auto-Resolve that blocks execution if pools aren't completely finished
   const handleAutoResolve = async () => {
-    if (!window.confirm("Auto-resolve bracket? This will overwrite placeholders.")) return;
+    const regex = /^(\d+)(st|nd|rd|th) Pool ([A-Z])$/;
+    
+    const playoffMatches = matches.filter(m => 
+      m.tournamentId === activeTournament?.id && 
+      (m.poolName === 'Knockout - Crossover' || m.poolName === 'Final') && 
+      m.status === 'pending'
+    );
+
+    if (playoffMatches.length === 0) return alert("No pending playoff matches to resolve.");
+
+    const poolsNeeded = new Set();
+    playoffMatches.forEach(match => {
+      const matchA = match.teamA?.match(regex);
+      if (matchA) poolsNeeded.add(`Pool ${matchA[3]}`);
+      
+      const matchB = match.teamB?.match(regex);
+      if (matchB) poolsNeeded.add(`Pool ${matchB[3]}`);
+    });
+
+    if (poolsNeeded.size > 0) {
+      const tourneyMatches = matches.filter(m => m.tournamentId === activeTournament?.id);
+      
+      // Enforce strict completion of required pools
+      for (const poolName of poolsNeeded) {
+        const matchesInPool = tourneyMatches.filter(m => m.poolName === poolName);
+        const incompleteMatches = matchesInPool.filter(m => m.status !== 'completed');
+        
+        if (incompleteMatches.length > 0) {
+          return alert(`Cannot resolve yet! [${poolName}] still has ${incompleteMatches.length} unfinished match(es). All matches in the pool must be completed first.`);
+        }
+      }
+    } else {
+      return alert("No unresolved placeholders found.");
+    }
+
+    if (!window.confirm("All required pools are complete! Auto-resolve bracket?")) return;
 
     const batch = writeBatch(db);
-    const crossoverMatches = matches.filter(m => m.tournamentId === activeTournament?.id && m.poolName === 'Knockout - Crossover' && m.status === 'pending');
-    
     const allStandings = {};
     Object.keys(activeTournament.pools).forEach(poolName => {
       allStandings[poolName] = getPoolStandings(poolName);
     });
 
-    const regex = /(\d+)(st|nd|rd|th) Pool ([A-Z])/;
-
-    crossoverMatches.forEach(match => {
+    playoffMatches.forEach(match => {
       let updatedTeamA = match.teamA;
       let updatedTeamB = match.teamB;
 
@@ -581,7 +616,6 @@ export default function AdminView() {
                      if (i < totalTeams % effectivePools) count++; 
                      initialManual[poolName] = Array(count).fill('');
                      
-                     // 🔴 Auto-assign dynamically generated colors
                      initialManualColors[poolName] = Array.from({length: count}).map(() => 
                        generateDynamicColor(colorIndexCounter++, totalTeams)
                      );
@@ -591,7 +625,6 @@ export default function AdminView() {
                 } else {
                   setTeamNames(Array(totalTeams).fill('')); 
                   
-                  // 🔴 Auto-assign dynamically generated colors
                   setTeamColors(Array.from({length: totalTeams}).map((_, i) => 
                     generateDynamicColor(i, totalTeams)
                   ));
@@ -614,7 +647,6 @@ export default function AdminView() {
                     <div className="space-y-2">
                       {manualTeams[poolName].map((team, idx) => (
                         <div key={idx} className="flex gap-2">
-                          {/* Visual Indicator of the perfectly unique assigned color */}
                           <div 
                             className="w-10 rounded border shadow-sm flex-shrink-0" 
                             style={{ backgroundColor: manualColors[poolName]?.[idx] || '#3B82F6' }}
@@ -641,7 +673,6 @@ export default function AdminView() {
               <div className="space-y-3 mb-6 max-h-[50vh] overflow-y-auto">
                 {Array.from({ length: parseInt(tourneyConfig.numTeams) || 4 }).map((_, index) => (
                   <div key={index} className="flex gap-2">
-                    {/* Visual Indicator of the perfectly unique assigned color */}
                     <div 
                       className="w-10 rounded border shadow-sm flex-shrink-0" 
                       style={{ backgroundColor: teamColors[index] || '#3B82F6' }}
@@ -704,6 +735,13 @@ export default function AdminView() {
 
   const finalMatch = tourneyMatches.find(m => m.poolName === 'Final' && m.status === 'completed');
   const knockoutChampion = finalMatch ? finalMatch.winner : null;
+
+  // 🔴 FIX: Strict Regex completely blocks assigning unresolved placeholders
+  const isMatchResolved = (m) => {
+    const regex = /^(\d+)(st|nd|rd|th) Pool ([A-Z])$/;
+    return !regex.test(m.teamA) && !regex.test(m.teamB) && m.teamA !== 'BYE' && m.teamB !== 'BYE';
+  };
+  const assignablePendingMatches = pendingMatches.filter(isMatchResolved);
 
   return (
     <div className="p-4 bg-white rounded-xl shadow-sm min-h-[70vh]">
@@ -768,7 +806,6 @@ export default function AdminView() {
                         return (
                           <tr key={stat.team} className={isChampion ? "bg-yellow-100 font-bold" : (isKnockoutWinner || isPoolQualifier) ? "bg-green-50" : ""}>
                             <td className={`px-3 py-2 font-medium flex items-center ${isEliminated ? 'line-through text-gray-400' : ''}`}>
-                              {/* Display Team Color Dot */}
                               <span className="w-3 h-3 rounded-full mr-2 inline-block" style={{ backgroundColor: liveActiveTournament.teamColors?.[stat.team] || '#2563EB' }}></span>
                               {stat.team} {isChampion && " 🏆"}
                             </td>
@@ -845,7 +882,7 @@ export default function AdminView() {
                 <div className="flex flex-col sm:flex-row gap-2 w-full">
                   <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border p-2 rounded text-sm w-full">
                     <option value="">-- Select Pending Match --</option>
-                    {pendingMatches.map(m => (
+                    {assignablePendingMatches.map(m => (
                       <option key={m.id} value={m.id}>[{m.poolName}] {m.teamA} vs {m.teamB}</option>
                     ))}
                   </select>
