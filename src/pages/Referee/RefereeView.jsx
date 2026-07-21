@@ -62,6 +62,13 @@ export default function RefereeView() {
   const activeCourts = tourneyMatches.filter(m => m.status === 'active');
   const completedMatches = tourneyMatches.filter(m => m.status === 'completed');
 
+  // 🔴 FIX: Strict Regex completely blocks assigning unresolved placeholders
+  const isMatchResolved = (m) => {
+    const regex = /^(\d+)(st|nd|rd|th) Pool ([A-Z])$/;
+    return !regex.test(m.teamA) && !regex.test(m.teamB) && m.teamA !== 'BYE' && m.teamB !== 'BYE';
+  };
+  const assignablePendingMatches = pendingMatches.filter(isMatchResolved);
+
   // ==========================================
   // SCORING LOGIC
   // ==========================================
@@ -214,7 +221,9 @@ export default function RefereeView() {
       .sort((a, b) => {
         if (b.won !== a.won) return b.won - a.won;       
         if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon; 
-        return b.pointDiff - a.pointDiff;                
+        if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff; 
+        // 🔴 FIX: Stable sort fallback by team name ensures tables don't randomly reshuffle on live updates
+        return a.team.localeCompare(b.team);               
       });
   };
 
@@ -265,20 +274,48 @@ export default function RefereeView() {
     alert(`${nextRoundName} has been generated successfully!`);
   };
 
+  // 🔴 FIX: Smart Auto-Resolve that blocks execution if pools aren't completely finished
   const handleAutoResolve = async () => {
-    if (!window.confirm("Auto-resolve bracket? This will overwrite placeholders.")) return;
+    const regex = /^(\d+)(st|nd|rd|th) Pool ([A-Z])$/;
+    
+    const playoffMatches = tourneyMatches.filter(m => 
+      (m.poolName === 'Knockout - Crossover' || m.poolName === 'Final') && 
+      m.status === 'pending'
+    );
+
+    if (playoffMatches.length === 0) return alert("No pending playoff matches to resolve.");
+
+    const poolsNeeded = new Set();
+    playoffMatches.forEach(match => {
+      const matchA = match.teamA?.match(regex);
+      if (matchA) poolsNeeded.add(`Pool ${matchA[3]}`);
+      
+      const matchB = match.teamB?.match(regex);
+      if (matchB) poolsNeeded.add(`Pool ${matchB[3]}`);
+    });
+
+    if (poolsNeeded.size > 0) {
+      for (const poolName of poolsNeeded) {
+        const matchesInPool = tourneyMatches.filter(m => m.poolName === poolName);
+        const incompleteMatches = matchesInPool.filter(m => m.status !== 'completed');
+        
+        if (incompleteMatches.length > 0) {
+          return alert(`Cannot resolve yet! [${poolName}] still has ${incompleteMatches.length} unfinished match(es). All matches in the pool must be completed first.`);
+        }
+      }
+    } else {
+      return alert("No unresolved placeholders found.");
+    }
+
+    if (!window.confirm("All required pools are complete! Auto-resolve bracket?")) return;
 
     const batch = writeBatch(db);
-    const crossoverMatches = tourneyMatches.filter(m => m.poolName === 'Knockout - Crossover' && m.status === 'pending');
-    
     const allStandings = {};
     Object.keys(parentTournament.pools).forEach(poolName => {
       allStandings[poolName] = getPoolStandings(poolName);
     });
 
-    const regex = /(\d+)(st|nd|rd|th) Pool ([A-Z])/;
-
-    crossoverMatches.forEach(match => {
+    playoffMatches.forEach(match => {
       let updatedTeamA = match.teamA;
       let updatedTeamB = match.teamB;
 
@@ -497,9 +534,10 @@ export default function RefereeView() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2 w-full">
+                      {/* 🔴 FIX: Now mapping over assignablePendingMatches to hide placeholders */}
                       <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border-2 border-gray-200 p-3 rounded-lg text-sm w-full bg-white">
                         <option value="">-- Select Pending Match --</option>
-                        {pendingMatches.map(m => (
+                        {assignablePendingMatches.map(m => (
                           <option key={m.id} value={m.id}>[{m.poolName}] {m.teamA} vs {m.teamB}</option>
                         ))}
                       </select>
