@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from '../../config/firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, setDoc, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, getDocs, writeBatch } from 'firebase/firestore';
-
+import { Trophy, LogOut, Plus, Activity, Settings, Users, CheckCircle, ChevronLeft, Calendar, Crown, Edit2, Trash2, Archive, PlayCircle, ShieldAlert, Zap, Lock } from 'lucide-react';
 // 🔴 Smart function to generate N perfectly unique colors
 const generateDynamicColor = (index, totalTeams) => {
   const hue = (index * 360) / totalTeams;
@@ -113,7 +113,7 @@ export default function AdminView() {
         numCourts: parseInt(tourneyConfig.numCourts) || 2,
         refereeCode: generatedRefCode,
         allowRefereeCourtManagement: false,
-        allowRefereeCustomMatches: false, // 🔴 NEW: Custom match toggle initialization
+        allowRefereeCustomMatches: false,
         createdAt: new Date().toISOString()
       };
       
@@ -448,18 +448,31 @@ export default function AdminView() {
   // ==========================================
   if (!user) {
     return (
-      <div className="p-4 bg-white rounded-xl shadow-sm max-w-sm mx-auto mt-10">
-        <h2 className="text-2xl font-bold mb-4 text-center">Admin Login</h2>
-        <form onSubmit={handleLogin} className="space-y-4">
-          {authError && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-3 text-red-700 text-sm font-bold">
-              {authError}
+      <div className="flex items-center justify-center min-h-[85vh] bg-gray-50 p-4">
+        <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+          <div className="flex justify-center mb-6">
+            <div className="bg-blue-50 p-4 rounded-full">
+              <ShieldAlert className="text-blue-600" size={32} />
             </div>
-          )}
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border p-2 rounded" required />
-          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border p-2 rounded" required />
-          <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold">Login</button>
-        </form>
+          </div>
+          <h2 className="text-3xl font-black mb-6 text-center text-gray-900 tracking-tight">Admin Portal</h2>
+          <form onSubmit={handleLogin} className="space-y-4">
+            {authError && (
+              <div className="bg-red-50 border-l-4 border-red-500 p-3 text-red-700 text-sm font-bold rounded-r">
+                {authError}
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Email</label>
+              <input type="email" placeholder="admin@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border-2 border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all outline-none" required />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Password</label>
+              <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border-2 border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all outline-none" required />
+            </div>
+            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-md mt-4">Login Securely</button>
+          </form>
+        </div>
       </div>
     );
   }
@@ -471,51 +484,60 @@ export default function AdminView() {
     const displayTourneys = tournaments.filter(t => showArchived ? t.status === 'archived' : t.status !== 'archived');
 
     return (
-      <div className="p-4 bg-white rounded-xl shadow-sm min-h-[70vh]">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">Tournament Hub</h2>
-          <button onClick={() => signOut(auth)} className="text-sm text-red-600 font-medium">Logout</button>
+      <div className="p-4 md:p-8 bg-gray-50 min-h-[85vh] rounded-2xl">
+        <div className="flex justify-between items-center mb-8">
+          <h2 className="text-3xl font-black text-gray-900 tracking-tight">Tournament Hub</h2>
+          <button onClick={() => signOut(auth)} className="flex items-center text-sm text-red-500 font-bold hover:bg-red-50 px-3 py-2 rounded-lg transition-colors">
+            <LogOut size={16} className="mr-2" /> Logout
+          </button>
         </div>
-        <button onClick={() => setView('wizard-config')} className="w-full mb-6 bg-blue-600 text-white py-3 rounded-lg font-bold shadow-sm">+ Create New Tournament</button>
         
-        <div className="flex justify-center mb-4">
-          <div className="bg-gray-100 p-1 rounded-lg flex text-sm font-bold w-full max-w-xs">
-            <button 
-              onClick={() => setShowArchived(false)} 
-              className={`flex-1 py-1.5 rounded-md ${!showArchived ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:bg-gray-200'}`}
-            >
-              Active
-            </button>
-            <button 
-              onClick={() => setShowArchived(true)} 
-              className={`flex-1 py-1.5 rounded-md ${showArchived ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:bg-gray-200'}`}
-            >
-              Archived
-            </button>
+        <button 
+          onClick={() => setView('wizard-config')} 
+          className="w-full mb-8 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg flex items-center justify-center transition-all transform hover:-translate-y-1"
+        >
+          <Plus className="mr-2" /> Create New Tournament
+        </button>
+        
+        <div className="flex justify-center mb-8">
+          <div className="bg-gray-200/60 p-1 rounded-xl flex text-sm font-bold w-full max-w-sm shadow-inner">
+            <button onClick={() => setShowArchived(false)} className={`flex-1 py-2 rounded-lg transition-all ${!showArchived ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Active Tourneys</button>
+            <button onClick={() => setShowArchived(true)} className={`flex-1 py-2 rounded-lg transition-all ${showArchived ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Archived</button>
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
           {displayTourneys.length === 0 && (
-            <p className="text-center text-gray-500 py-6">No {showArchived ? 'archived' : 'active'} tournaments found.</p>
+            <div className="text-center p-12 bg-white rounded-3xl border border-gray-100 shadow-sm">
+              <Archive className="mx-auto text-gray-300 mb-4" size={48} />
+              <p className="text-gray-500 font-bold">No {showArchived ? 'archived' : 'active'} tournaments found.</p>
+            </div>
           )}
           {displayTourneys.map(t => (
-            <div key={t.id} className="border p-4 rounded-lg flex justify-between items-center hover:bg-gray-50">
+            <div key={t.id} className="bg-white border border-gray-100 p-5 rounded-2xl shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h4 className="font-bold text-lg">{t.tournamentName || 'Unnamed'}</h4>
-                <p className="text-xs text-gray-500 capitalize">{t.type === 'round-robin' ? 'Round Robin' : 'Knockout'}</p>
+                <h4 className="font-black text-xl text-gray-900 mb-1">{t.tournamentName || 'Unnamed'}</h4>
+                <div className="flex items-center text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <Activity size={14} className="mr-1.5 text-blue-500" />
+                  {t.type === 'round-robin' ? 'Round Robin' : 'Knockout'}
+                  <span className="mx-2">•</span>
+                  <Users size={14} className="mr-1.5 text-blue-500" />
+                  {Object.values(t.pools || {}).flat().length} Teams
+                </div>
               </div>
-              <div className="flex space-x-2">
+              
+              <div className="flex flex-wrap w-full md:w-auto gap-2">
                 {!showArchived && (
-                  <button onClick={() => { setActiveTournament(t); setView('tournament-details'); }} className="bg-gray-800 text-white px-3 py-2 rounded font-medium text-sm">Open</button>
+                  <button onClick={() => { setActiveTournament(t); setView('tournament-details'); }} className="flex-1 md:flex-none bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 px-4 py-2.5 rounded-xl font-bold text-sm transition-colors flex justify-center items-center">
+                    <Settings size={16} className="mr-2" /> Manage
+                  </button>
                 )}
-                <button 
-                  onClick={() => toggleArchiveTournament(t.id, t.status)} 
-                  className={`px-3 py-2 rounded font-medium text-sm ${showArchived ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}
-                >
-                  {showArchived ? 'Un-Archive' : 'Archive'}
+                <button onClick={() => toggleArchiveTournament(t.id, t.status)} className={`flex-1 md:flex-none px-4 py-2.5 rounded-xl font-bold text-sm transition-colors flex justify-center items-center ${showArchived ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}>
+                  <Archive size={16} className="mr-2" /> {showArchived ? 'Un-Archive' : 'Archive'}
                 </button>
-                <button onClick={() => handleDeleteTournament(t.id)} className="bg-red-100 text-red-600 px-3 py-2 rounded font-bold text-sm">X</button>
+                <button onClick={() => handleDeleteTournament(t.id)} className="flex-none bg-red-50 hover:bg-red-600 hover:text-white text-red-500 px-4 py-2.5 rounded-xl font-bold transition-colors">
+                  <Trash2 size={16} />
+                </button>
               </div>
             </div>
           ))}
@@ -529,80 +551,76 @@ export default function AdminView() {
   // ==========================================
   if (view === 'wizard-config' || view === 'wizard-teams') {
     return (
-      <div className="p-4 bg-white rounded-xl shadow-sm min-h-[70vh]">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">
-            {view === 'wizard-config' ? 'Tournament Setup' : 'Name the Teams'}
+      <div className="p-4 md:p-8 bg-gray-50 min-h-[85vh] rounded-2xl">
+        <div className="flex justify-between items-center mb-8">
+          <h2 className="text-3xl font-black text-gray-900 tracking-tight">
+            {view === 'wizard-config' ? 'Tournament Setup' : 'Configure Teams'}
           </h2>
-          <button onClick={() => setView('hub')} className="text-sm text-gray-500 font-medium hover:text-gray-800 transition-colors">
-            Cancel
+          <button onClick={() => setView('hub')} className="text-xs font-bold text-gray-500 uppercase hover:text-gray-900 transition-colors flex items-center">
+            Cancel Setup
           </button>
         </div>
 
         {view === 'wizard-config' ? (
-          <div className="space-y-4">
-            <input type="text" placeholder="Tournament Name" value={tourneyConfig.name} onChange={(e) => setTourneyConfig({...tourneyConfig, name: e.target.value})} className="w-full border p-2 rounded text-lg font-bold" />
-            <select value={tourneyConfig.type} onChange={(e) => setTourneyConfig({...tourneyConfig, type: e.target.value})} className="w-full border p-2 rounded font-medium bg-gray-50">
-              <option value="round-robin">Round Robin (Pools)</option>
-              <option value="knockout">Knockout Bracket</option>
-            </select>
+          <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
             
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Total Teams</label><input type="number" value={tourneyConfig.numTeams} onChange={(e) => setTourneyConfig({...tourneyConfig, numTeams: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Courts</label><input type="number" value={tourneyConfig.numCourts} onChange={(e) => setTourneyConfig({...tourneyConfig, numCourts: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
-              
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Sets (Best Of)</label><input type="number" min="1" step="2" value={tourneyConfig.sets} onChange={(e) => setTourneyConfig({...tourneyConfig, sets: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
-              <div><label className="text-xs font-bold text-gray-500 uppercase">Points per Set</label><input type="number" min="1" value={tourneyConfig.points} onChange={(e) => setTourneyConfig({...tourneyConfig, points: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
-              
-              {tourneyConfig.type === 'round-robin' && (
-                <div><label className="text-xs font-bold text-gray-500 uppercase">Pools (Even Only)</label><input type="number" min="2" step="2" value={tourneyConfig.numPools} onChange={(e) => setTourneyConfig({...tourneyConfig, numPools: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border p-2 rounded mt-1" /></div>
-              )}
-              {tourneyConfig.type === 'round-robin' && (
-                <div><label className="text-xs font-bold text-blue-600 uppercase">Table Tops</label><input type="number" min="1" value={tourneyConfig.tableTops} onChange={(e) => setTourneyConfig({...tourneyConfig, tableTops: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border-2 border-blue-200 p-2 rounded mt-1" /></div>
-              )}
-              
-              {tourneyConfig.type === 'round-robin' && (
-                <div className="col-span-2 mt-2 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
-                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div className="w-full sm:w-auto text-left">
-                      <label className="text-sm font-bold text-blue-900 uppercase">Pool Assignment Mode</label>
-                      <p className="text-xs text-blue-700">How do you want to assign teams to pools?</p>
-                    </div>
-                    
-                    <div className="flex bg-white p-1 rounded-lg border border-blue-200 shadow-sm w-full sm:w-auto">
-                      <button
-                        type="button"
-                        onClick={() => setTourneyConfig({...tourneyConfig, assignmentMode: 'auto'})}
-                        className={`flex-1 sm:flex-none px-6 py-2 rounded-md font-bold text-sm transition-all ${
-                          tourneyConfig.assignmentMode === 'auto' 
-                          ? 'bg-blue-600 text-white shadow-md' 
-                          : 'text-gray-500 hover:bg-gray-100'
-                        }`}
-                      >
-                        ⚡ Auto
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTourneyConfig({...tourneyConfig, assignmentMode: 'manual'})}
-                        className={`flex-1 sm:flex-none px-6 py-2 rounded-md font-bold text-sm transition-all ${
-                          tourneyConfig.assignmentMode === 'manual' 
-                          ? 'bg-blue-600 text-white shadow-md' 
-                          : 'text-gray-500 hover:bg-gray-100'
-                        }`}
-                      >
-                        ✋ Manual
-                      </button>
-                    </div>
+            <div>
+              <label className="text-xs font-black text-gray-500 uppercase tracking-widest mb-2 block">Tournament Title</label>
+              <input type="text" placeholder="e.g. Summer Smash 2024" value={tourneyConfig.name} onChange={(e) => setTourneyConfig({...tourneyConfig, name: e.target.value})} className="w-full border-2 border-gray-200 p-4 rounded-xl text-xl font-bold focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all outline-none" />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+              <div className="bg-blue-50/50 p-5 rounded-2xl border border-blue-100">
+                <h3 className="font-bold text-blue-900 mb-4 flex items-center"><Settings size={18} className="mr-2 text-blue-600" /> Format Rules</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Bracket Type</label>
+                    <select value={tourneyConfig.type} onChange={(e) => setTourneyConfig({...tourneyConfig, type: e.target.value})} className="w-full border-2 border-white bg-white p-3 rounded-xl font-bold text-gray-800 shadow-sm focus:border-blue-400 outline-none">
+                      <option value="round-robin">Round Robin (Pools)</option>
+                      <option value="knockout">Knockout Bracket</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Sets (Best of)</label><input type="number" min="1" step="2" value={tourneyConfig.sets} onChange={(e) => setTourneyConfig({...tourneyConfig, sets: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border-2 border-white bg-white p-3 rounded-xl font-bold shadow-sm outline-none focus:border-blue-400" /></div>
+                    <div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Points per set</label><input type="number" min="1" value={tourneyConfig.points} onChange={(e) => setTourneyConfig({...tourneyConfig, points: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border-2 border-white bg-white p-3 rounded-xl font-bold shadow-sm outline-none focus:border-blue-400" /></div>
                   </div>
                 </div>
-              )}
+              </div>
+
+              <div className="bg-purple-50/50 p-5 rounded-2xl border border-purple-100">
+                <h3 className="font-bold text-purple-900 mb-4 flex items-center"><Users size={18} className="mr-2 text-purple-600" /> Scale & Size</h3>
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Total Teams</label><input type="number" value={tourneyConfig.numTeams} onChange={(e) => setTourneyConfig({...tourneyConfig, numTeams: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border-2 border-white bg-white p-3 rounded-xl font-bold shadow-sm outline-none focus:border-purple-400" /></div>
+                    <div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Total Courts</label><input type="number" value={tourneyConfig.numCourts} onChange={(e) => setTourneyConfig({...tourneyConfig, numCourts: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border-2 border-white bg-white p-3 rounded-xl font-bold shadow-sm outline-none focus:border-purple-400" /></div>
+                  </div>
+                  {tourneyConfig.type === 'round-robin' && (
+                    <div className="flex gap-4">
+                      <div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Pools (Even Only)</label><input type="number" min="2" step="2" value={tourneyConfig.numPools} onChange={(e) => setTourneyConfig({...tourneyConfig, numPools: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border-2 border-white bg-white p-3 rounded-xl font-bold shadow-sm outline-none focus:border-purple-400" /></div>
+                      <div className="flex-1"><label className="text-xs font-bold text-purple-600 uppercase block mb-1">Table Tops Adv.</label><input type="number" min="1" value={tourneyConfig.tableTops} onChange={(e) => setTourneyConfig({...tourneyConfig, tableTops: e.target.value === '' ? '' : parseInt(e.target.value)})} className="w-full border-2 border-purple-200 bg-white p-3 rounded-xl font-bold shadow-sm outline-none focus:border-purple-400" /></div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {tourneyConfig.type === 'round-robin' && (
+              <div className="p-5 bg-gray-50 rounded-2xl border border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div>
+                  <h4 className="font-black text-gray-800 uppercase tracking-widest text-sm">Pool Assignment</h4>
+                  <p className="text-xs text-gray-500 font-medium">How should teams be sorted into pools?</p>
+                </div>
+                <div className="flex bg-gray-200/60 p-1 rounded-xl w-full sm:w-auto shadow-inner">
+                  <button type="button" onClick={() => setTourneyConfig({...tourneyConfig, assignmentMode: 'auto'})} className={`flex-1 sm:flex-none px-6 py-2 rounded-lg font-bold text-sm transition-all ${tourneyConfig.assignmentMode === 'auto' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>⚡ Auto Fill</button>
+                  <button type="button" onClick={() => setTourneyConfig({...tourneyConfig, assignmentMode: 'manual'})} className={`flex-1 sm:flex-none px-6 py-2 rounded-lg font-bold text-sm transition-all ${tourneyConfig.assignmentMode === 'manual' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>✋ Manual</button>
+                </div>
+              </div>
+            )}
             
             <button 
               onClick={() => { 
                 const totalTeams = parseInt(tourneyConfig.numTeams) || 4;
                 let colorIndexCounter = 0; 
-
                 if (tourneyConfig.type === 'round-robin' && tourneyConfig.assignmentMode === 'manual') {
                   const effectivePools = parseInt(tourneyConfig.numPools) || 2;
                   const initialManual = {};
@@ -612,54 +630,34 @@ export default function AdminView() {
                      let count = Math.floor(totalTeams / effectivePools);
                      if (i < totalTeams % effectivePools) count++; 
                      initialManual[poolName] = Array(count).fill('');
-                     
-                     initialManualColors[poolName] = Array.from({length: count}).map(() => 
-                       generateDynamicColor(colorIndexCounter++, totalTeams)
-                     );
+                     initialManualColors[poolName] = Array.from({length: count}).map(() => generateDynamicColor(colorIndexCounter++, totalTeams));
                   }
                   setManualTeams(initialManual);
                   setManualColors(initialManualColors);
                 } else {
                   setTeamNames(Array(totalTeams).fill('')); 
-                  
-                  setTeamColors(Array.from({length: totalTeams}).map((_, i) => 
-                    generateDynamicColor(i, totalTeams)
-                  ));
+                  setTeamColors(Array.from({length: totalTeams}).map((_, i) => generateDynamicColor(i, totalTeams)));
                 }
                 setView('wizard-teams'); 
               }} 
               disabled={!tourneyConfig.name || (tourneyConfig.type === 'round-robin' && (!tourneyConfig.numPools || parseInt(tourneyConfig.numPools) % 2 !== 0))} 
-              className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+              className="w-full mt-6 bg-gray-900 text-white py-4 rounded-xl font-black text-lg hover:bg-black disabled:opacity-50 transition-colors shadow-md"
             >
-              Next →
+              Next: Configure Teams →
             </button>
           </div>
         ) : (
-          <div>
+          <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100">
             {tourneyConfig.type === 'round-robin' && tourneyConfig.assignmentMode === 'manual' ? (
-              <div className="space-y-4 mb-6 max-h-[50vh] overflow-y-auto pr-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
                 {Object.keys(manualTeams).map(poolName => (
-                  <div key={poolName} className="border-2 border-gray-100 p-4 rounded-xl bg-gray-50">
-                    <h4 className="font-bold text-blue-800 mb-3">{poolName}</h4>
-                    <div className="space-y-2">
+                  <div key={poolName} className="border border-gray-100 p-5 rounded-2xl bg-gray-50">
+                    <h4 className="font-black text-blue-800 mb-4 uppercase tracking-widest text-sm">{poolName}</h4>
+                    <div className="space-y-3">
                       {manualTeams[poolName].map((team, idx) => (
-                        <div key={idx} className="flex gap-2">
-                          <div 
-                            className="w-10 rounded border shadow-sm flex-shrink-0" 
-                            style={{ backgroundColor: manualColors[poolName]?.[idx] || '#3B82F6' }}
-                            title="Auto-assigned Team Color"
-                          />
-                          <input 
-                            type="text" 
-                            value={team} 
-                            onChange={(e) => { 
-                              const newManual = { ...manualTeams }; 
-                              newManual[poolName][idx] = e.target.value; 
-                              setManualTeams(newManual); 
-                            }} 
-                            placeholder={`${poolName} - Team ${idx + 1}`} 
-                            className="flex-1 border p-2 rounded shadow-sm focus:border-blue-500 focus:outline-none" 
-                          />
+                        <div key={idx} className="flex gap-3 items-center bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+                          <div className="w-8 h-8 rounded-full shadow-inner flex-shrink-0" style={{ backgroundColor: manualColors[poolName]?.[idx] || '#3B82F6' }} title="Team Color" />
+                          <input type="text" value={team} onChange={(e) => { const newManual = { ...manualTeams }; newManual[poolName][idx] = e.target.value; setManualTeams(newManual); }} placeholder={`${poolName} - Team ${idx + 1}`} className="flex-1 p-2 bg-transparent font-bold focus:outline-none focus:text-blue-600" />
                         </div>
                       ))}
                     </div>
@@ -667,43 +665,22 @@ export default function AdminView() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-3 mb-6 max-h-[50vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
                 {Array.from({ length: parseInt(tourneyConfig.numTeams) || 4 }).map((_, index) => (
-                  <div key={index} className="flex gap-2">
-                    <div 
-                      className="w-10 rounded border shadow-sm flex-shrink-0" 
-                      style={{ backgroundColor: teamColors[index] || '#3B82F6' }}
-                      title="Auto-assigned Team Color"
-                    />
-                    <input 
-                      type="text" 
-                      value={teamNames[index] || ''} 
-                      onChange={(e) => { 
-                        const newNames = [...teamNames]; 
-                        newNames[index] = e.target.value; 
-                        setTeamNames(newNames); 
-                      }} 
-                      placeholder={`Team ${index + 1}`} 
-                      className="flex-1 border p-2 rounded shadow-sm focus:border-blue-500 focus:outline-none" 
-                    />
+                  <div key={index} className="flex gap-3 items-center bg-gray-50 p-2 rounded-xl border border-gray-100">
+                    <div className="w-8 h-8 rounded-full shadow-inner flex-shrink-0" style={{ backgroundColor: teamColors[index] || '#3B82F6' }} title="Team Color" />
+                    <input type="text" value={teamNames[index] || ''} onChange={(e) => { const newNames = [...teamNames]; newNames[index] = e.target.value; setTeamNames(newNames); }} placeholder={`Team ${index + 1}`} className="flex-1 p-2 bg-transparent font-bold focus:outline-none focus:text-blue-600" />
                   </div>
                 ))}
               </div>
             )}
             
-            <div className="flex gap-3">
-              <button 
-                onClick={() => setView('wizard-config')}
-                className="w-1/3 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300 transition-colors"
-              >
-                ← Back
+            <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-gray-100">
+              <button onClick={() => setView('wizard-config')} className="sm:w-1/3 bg-gray-100 text-gray-600 py-4 rounded-xl font-black hover:bg-gray-200 transition-colors flex justify-center items-center">
+                <ChevronLeft className="mr-1" /> Back
               </button>
-              <button 
-                onClick={handleSaveTournament} 
-                disabled={isGenerating}
-                className={`w-2/3 text-white py-3 rounded-lg font-bold shadow-md transition-colors ${isGenerating ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
-              >
-                {isGenerating ? 'Generating...' : 'Generate Tournament'}
+              <button onClick={handleSaveTournament} disabled={isGenerating} className={`sm:w-2/3 text-white py-4 rounded-xl font-black text-lg shadow-md transition-all flex justify-center items-center ${isGenerating ? 'bg-gray-400' : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 hover:shadow-lg'}`}>
+                {isGenerating ? 'Generating Matches...' : <><PlayCircle className="mr-2" /> Start Tournament Now</>}
               </button>
             </div>
           </div>
@@ -716,26 +693,17 @@ export default function AdminView() {
   // RENDER: TOURNAMENT DETAILS & SCHEDULER
   // ==========================================
   const liveActiveTournament = tournaments.find(t => t.id === activeTournament?.id) || activeTournament;
-  
   const tourneyMatches = matches.filter(m => m.tournamentId === liveActiveTournament?.id);
+  
   const pendingMatches = tourneyMatches.filter(m => m.status === 'pending');
   const activeCourtsMatches = tourneyMatches.filter(m => m.status === 'active');
   const completedMatches = tourneyMatches.filter(m => m.status === 'completed');
 
-  // 🔴 FIX: Dynamically populate allDisplayPools so Referee Custom Matches appear automatically
   const standardPools = Object.keys(liveActiveTournament?.pools || {});
-  
-  // Find custom pool names created by referees
   const allMatchPools = Array.from(new Set(tourneyMatches.map(m => m.poolName)));
-  const customPools = allMatchPools.filter(p => 
-    !standardPools.includes(p) && 
-    p !== 'Knockout - Crossover' && 
-    p !== 'Final' &&
-    !p.startsWith('Round ')
-  );
+  const customPools = allMatchPools.filter(p => !standardPools.includes(p) && p !== 'Knockout - Crossover' && p !== 'Final' && !p.startsWith('Round '));
 
   const allDisplayPools = [...standardPools, ...customPools];
-  
   const hasCrossovers = tourneyMatches.some(m => m.poolName === 'Knockout - Crossover');
   const hasFinal = tourneyMatches.some(m => m.poolName === 'Final');
   if (hasCrossovers) allDisplayPools.push('Knockout - Crossover');
@@ -751,90 +719,101 @@ export default function AdminView() {
   const assignablePendingMatches = pendingMatches.filter(isMatchResolved);
 
   return (
-    <div className="p-4 bg-white rounded-xl shadow-sm min-h-[70vh]">
-      <div className="flex justify-between items-start mb-6 border-b pb-4">
+    <div className="p-4 md:p-8 bg-gray-50 min-h-[85vh] rounded-2xl pb-20">
+      
+      {/* 🔴 HEADER & REFEREE CODE */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
         <div>
-          <button onClick={() => setView('hub')} className="text-xs text-blue-600 font-bold uppercase mb-1 hover:underline">← Back to Hub</button>
-          <h2 className="text-2xl font-bold text-gray-800">{liveActiveTournament?.tournamentName}</h2>
+          <button onClick={() => setView('hub')} className="flex items-center text-xs font-black text-gray-500 mb-2 uppercase tracking-widest hover:text-blue-600 transition-colors">
+            <ChevronLeft size={16} className="mr-1" /> Tournament Hub
+          </button>
+          <h2 className="text-3xl font-black text-gray-900 tracking-tight">{liveActiveTournament?.tournamentName}</h2>
         </div>
-        <div className="text-right bg-blue-50 p-3 rounded-lg border border-blue-100 min-w-[140px]">
-          <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">Referee Code</p>
-          <p className="text-2xl font-mono font-bold tracking-widest text-gray-800">{liveActiveTournament?.refereeCode || 'N/A'}</p>
+        <div className="text-right bg-gradient-to-br from-gray-900 to-gray-800 p-4 rounded-2xl border border-gray-700 min-w-[160px] shadow-lg flex flex-col items-center md:items-end">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Lock size={12} className="mr-1"/> Referee Code</p>
+          <p className="text-3xl font-mono font-bold tracking-[0.2em] text-white">{liveActiveTournament?.refereeCode || 'N/A'}</p>
         </div>
       </div>
 
       {liveActiveTournament && (
-        <div className="mb-8 border-b pb-6">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-bold text-gray-500 uppercase">
-              {liveActiveTournament.type === 'knockout' ? 'Live Tournament Standings' : 'Live Pool Standings & Playoffs'}
-            </h3>
+        <div className="mb-12">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <div className="flex items-center">
+              <div className="bg-blue-100 p-2 rounded-lg mr-3"><Trophy size={20} className="text-blue-600" /></div>
+              <h3 className="text-xl font-black text-gray-800 uppercase tracking-wide">
+                {liveActiveTournament.type === 'knockout' ? 'Live Bracket' : 'Live Pools & Playoffs'}
+              </h3>
+            </div>
             
             {liveActiveTournament.type === 'round-robin' ? (
-              <button onClick={handleAutoResolve} className="bg-purple-600 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors">
-                ⚡ Auto-Resolve Knockouts
+              <button onClick={handleAutoResolve} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 text-sm font-bold rounded-xl shadow-md transition-colors flex items-center">
+                <Zap size={16} className="mr-2" /> Auto-Resolve Knockouts
               </button>
             ) : (
-              <button onClick={handleGenerateNextRound} className="bg-purple-600 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors">
-                ⚡ Generate Next Round
+              <button onClick={handleGenerateNextRound} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 text-sm font-bold rounded-xl shadow-md transition-colors flex items-center">
+                <Zap size={16} className="mr-2" /> Generate Next Round
               </button>
             )}
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {allDisplayPools.map(poolName => {
               const standings = getPoolStandings(poolName);
               if (standings.length === 0) return null;
               const isKnockout = liveActiveTournament.type === 'knockout';
 
-              return (
-                <div key={poolName} className="border rounded-lg overflow-hidden bg-white shadow-sm overflow-x-auto w-full">
-                  <div className={`text-white text-xs font-bold px-3 py-2 uppercase ${poolName === 'Final' ? 'bg-yellow-500' : poolName.includes('Knockout') ? 'bg-purple-600' : customPools.includes(poolName) ? 'bg-pink-600' : 'bg-blue-600'}`}>
-                    {isKnockout ? "Overall Standings" : poolName}
-                  </div>
-                  <table className="w-full text-left text-sm min-w-max">
-                    <thead className="bg-gray-100 text-gray-600 text-xs uppercase">
-                      <tr>
-                        <th className="px-3 py-2">Team</th>
-                        <th className="px-2 py-2 text-center">W</th>
-                        <th className="px-2 py-2 text-center">Sets</th>
-                        <th className="px-2 py-2 text-center text-red-500">L</th> 
-                        {isKnockout && <th className="px-2 py-2 text-center text-blue-600">Status</th>}
-                        <th className="px-2 py-2 text-center" title="Point Differential">Pt Diff</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {standings.map((stat, idx) => {
-                        const isChampion = (poolName === 'Final' && idx === 0 && stat.won > 0) || (isKnockout && stat.team === knockoutChampion);
-                        const isKnockoutWinner = poolName === 'Knockout - Crossover' && stat.won > 0;
-                        const isPoolQualifier = standardPools.includes(poolName) && idx < liveActiveTournament.rules.tableTops;
-                        const isEliminated = isKnockout && stat.losses > 0;
-                        
-                        return (
-                          <tr key={stat.team} className={isChampion ? "bg-yellow-100 font-bold" : (isKnockoutWinner || isPoolQualifier) ? "bg-green-50" : ""}>
-                            <td className={`px-3 py-2 font-medium flex items-center ${isEliminated ? 'line-through text-gray-400' : ''}`}>
-                              {/* 🔴 Custom matches fallback to standard blue if team not in original setup */}
-                              <span className="w-3 h-3 rounded-full mr-2 inline-block" style={{ backgroundColor: liveActiveTournament.teamColors?.[stat.team] || '#2563EB' }}></span>
-                              {stat.team} {isChampion && " 🏆"}
-                            </td>
-                            <td className="px-2 py-2 text-center font-bold">{stat.won}</td>
-                            <td className="px-2 py-2 text-center text-gray-600">{stat.setsWon}</td>
-                            <td className="px-2 py-2 text-center font-bold text-red-500">{stat.losses}</td>
-                            
-                            {isKnockout && (
-                              <td className={`px-2 py-2 text-center font-bold ${isEliminated ? 'text-red-500' : 'text-green-500'}`}>
-                                {isEliminated ? 'OUT' : 'IN'}
-                              </td>
-                            )}
+              let headerBg = 'bg-blue-600';
+              if (poolName === 'Final') headerBg = 'bg-yellow-500';
+              else if (poolName.includes('Knockout') || poolName.includes('Round')) headerBg = 'bg-purple-600';
+              else if (customPools.includes(poolName)) headerBg = 'bg-pink-600';
 
-                            <td className={`px-2 py-2 text-center font-bold ${stat.pointDiff > 0 ? 'text-green-600' : stat.pointDiff < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                              {stat.pointDiff > 0 ? `+${stat.pointDiff}` : stat.pointDiff}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              return (
+                <div key={poolName} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+                  <div className={`${headerBg} text-white text-xs font-black px-4 py-3 uppercase tracking-widest flex justify-between items-center`}>
+                    <span>{isKnockout ? "Overall Standings" : poolName}</span>
+                    {customPools.includes(poolName) && <span className="bg-white bg-opacity-20 px-2 py-0.5 rounded text-[10px]">Custom</span>}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-gray-50 text-gray-500 text-[10px] uppercase tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3 font-bold">Team</th>
+                          <th className="px-3 py-3 text-center font-bold">W</th>
+                          <th className="px-3 py-3 text-center font-bold">Sets</th>
+                          <th className="px-3 py-3 text-center font-bold text-red-400">L</th> 
+                          {isKnockout && <th className="px-3 py-3 text-center font-bold text-blue-500">Status</th>}
+                          <th className="px-4 py-3 text-center font-bold">Pt Diff</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {standings.map((stat, idx) => {
+                          const isWinner = (poolName === 'Final' && idx === 0 && stat.won > 0) || (isKnockout && stat.team === knockoutChampion);
+                          const isKnockoutWinner = poolName === 'Knockout - Crossover' && stat.won > 0;
+                          const isPoolQualifier = standardPools.includes(poolName) && idx < liveActiveTournament.rules.tableTops;
+                          const isEliminated = isKnockout && stat.losses > 0;
+                          
+                          return (
+                            <tr key={stat.team} className={`transition-colors hover:bg-gray-50 ${isWinner ? "bg-yellow-50/50" : (isKnockoutWinner || isPoolQualifier) ? "bg-green-50/30" : ""}`}>
+                              <td className={`px-4 py-3 font-bold flex items-center ${isEliminated ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                                <span className="w-3 h-3 rounded-full mr-3 shadow-inner" style={{ backgroundColor: liveActiveTournament.teamColors?.[stat.team] || '#2563EB' }}></span>
+                                {stat.team} 
+                                {isWinner && <Crown size={14} className="ml-2 text-yellow-500" />}
+                              </td>
+                              <td className="px-3 py-3 text-center font-black text-gray-900">{stat.won}</td>
+                              <td className="px-3 py-3 text-center font-semibold text-gray-500">{stat.setsWon}</td>
+                              <td className="px-3 py-3 text-center font-black text-red-500">{stat.losses}</td>
+                              {isKnockout && <td className={`px-3 py-3 text-center font-bold text-xs ${isEliminated ? 'text-red-400' : 'text-green-500'}`}>{isEliminated ? 'OUT' : 'IN'}</td>}
+                              <td className="px-4 py-3 text-center">
+                                <span className={`inline-block px-2 py-1 rounded-md text-[10px] font-black ${stat.pointDiff > 0 ? 'bg-green-100 text-green-700' : stat.pointDiff < 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                                  {stat.pointDiff > 0 ? `+${stat.pointDiff}` : stat.pointDiff}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               );
             })}
@@ -842,139 +821,168 @@ export default function AdminView() {
         </div>
       )}
 
-      {/* --- SMART COURT MANAGER --- */}
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-sm font-bold text-gray-500 uppercase">Court Manager</h3>
-        
-        {/* 🔴 FIX: Added Custom Matches Toggle inside flex container */}
-        <div className="flex items-center gap-4">
-          <label className="flex items-center cursor-pointer">
-            <span className="mr-2 text-xs font-bold text-gray-600 uppercase">Referee Assign</span>
-            <div className="relative">
-              <input 
-                type="checkbox" 
-                className="sr-only" 
-                checked={liveActiveTournament?.allowRefereeCourtManagement || false} 
-                onChange={async (e) => {
-                  await updateDoc(doc(db, 'tournaments', liveActiveTournament.id), { 
-                    allowRefereeCourtManagement: e.target.checked 
-                  });
-                }} 
-              />
-              <div className={`block w-10 h-6 rounded-full transition-colors ${liveActiveTournament?.allowRefereeCourtManagement ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-              <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${liveActiveTournament?.allowRefereeCourtManagement ? 'translate-x-4' : ''}`}></div>
-            </div>
-          </label>
+      {/* 🔴 SMART COURT MANAGER */}
+      <div className="mb-12">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+          <div className="flex items-center">
+            <div className="bg-blue-100 p-2 rounded-lg mr-3"><Calendar size={20} className="text-blue-600" /></div>
+            <h3 className="text-xl font-black text-gray-800 uppercase tracking-wide">Court Manager</h3>
+          </div>
           
-          <label className="flex items-center cursor-pointer">
-            <span className="mr-2 text-xs font-bold text-gray-600 uppercase">Custom Matches</span>
-            <div className="relative">
-              <input 
-                type="checkbox" 
-                className="sr-only" 
-                checked={liveActiveTournament?.allowRefereeCustomMatches || false} 
-                onChange={async (e) => {
-                  await updateDoc(doc(db, 'tournaments', liveActiveTournament.id), { 
-                    allowRefereeCustomMatches: e.target.checked 
-                  });
-                }} 
-              />
-              <div className={`block w-10 h-6 rounded-full transition-colors ${liveActiveTournament?.allowRefereeCustomMatches ? 'bg-purple-500' : 'bg-gray-300'}`}></div>
-              <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${liveActiveTournament?.allowRefereeCustomMatches ? 'translate-x-4' : ''}`}></div>
-            </div>
-          </label>
-        </div>
-      </div>
-      
-      <div className="space-y-3 mb-8">
-        {Array.from({ length: liveActiveTournament?.numCourts || 2 }).map((_, i) => {
-          const courtName = `Court ${i + 1}`;
-          const matchOnCourt = activeCourtsMatches.find(m => m.courtName === courtName);
+          <div className="flex flex-wrap items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+            <label className="flex items-center cursor-pointer p-2 hover:bg-gray-50 rounded-xl transition-colors">
+              <span className="mr-3 text-xs font-black text-gray-500 uppercase tracking-widest">Referee Assign</span>
+              <div className="relative">
+                <input type="checkbox" className="sr-only" checked={liveActiveTournament?.allowRefereeCourtManagement || false} onChange={async (e) => { await updateDoc(doc(db, 'tournaments', liveActiveTournament.id), { allowRefereeCourtManagement: e.target.checked }); }} />
+                <div className={`block w-12 h-7 rounded-full transition-colors ${liveActiveTournament?.allowRefereeCourtManagement ? 'bg-green-500' : 'bg-gray-200'}`}></div>
+                <div className={`dot absolute left-1 top-1 bg-white w-5 h-5 rounded-full shadow-md transition transform ${liveActiveTournament?.allowRefereeCourtManagement ? 'translate-x-5' : ''}`}></div>
+              </div>
+            </label>
+            
+            <div className="w-px h-8 bg-gray-200 hidden md:block"></div>
 
-          return (
-            <div key={courtName} className={`p-4 border-2 rounded-lg ${matchOnCourt ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
-              <h4 className="font-bold text-gray-800 mb-2">{courtName}</h4>
-              
-              {matchOnCourt ? (
-                <div>
-                  <div className="flex justify-between items-center bg-white p-3 rounded border shadow-sm mb-2">
-                    <div>
-                      {/* 🔴 Custom match styling fallback */}
-                      <span className={`text-xs font-bold px-2 py-1 rounded ${matchOnCourt.poolName === 'Final' ? 'bg-yellow-100 text-yellow-700' : matchOnCourt.poolName.includes('Round ') || matchOnCourt.poolName.includes('Knockout') ? 'bg-purple-100 text-purple-700' : customPools.includes(matchOnCourt.poolName) ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-600'}`}>
+            <label className="flex items-center cursor-pointer p-2 hover:bg-gray-50 rounded-xl transition-colors">
+              <span className="mr-3 text-xs font-black text-gray-500 uppercase tracking-widest">Custom Matches</span>
+              <div className="relative">
+                <input type="checkbox" className="sr-only" checked={liveActiveTournament?.allowRefereeCustomMatches || false} onChange={async (e) => { await updateDoc(doc(db, 'tournaments', liveActiveTournament.id), { allowRefereeCustomMatches: e.target.checked }); }} />
+                <div className={`block w-12 h-7 rounded-full transition-colors ${liveActiveTournament?.allowRefereeCustomMatches ? 'bg-purple-500' : 'bg-gray-200'}`}></div>
+                <div className={`dot absolute left-1 top-1 bg-white w-5 h-5 rounded-full shadow-md transition transform ${liveActiveTournament?.allowRefereeCustomMatches ? 'translate-x-5' : ''}`}></div>
+              </div>
+            </label>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {Array.from({ length: liveActiveTournament?.numCourts || 2 }).map((_, i) => {
+            const courtName = `Court ${i + 1}`;
+            const matchOnCourt = activeCourtsMatches.find(m => m.courtName === courtName);
+
+            return (
+              <div key={courtName} className={`p-5 border-2 rounded-2xl transition-colors ${matchOnCourt ? 'border-green-400 bg-green-50/30 shadow-sm' : 'border-dashed border-gray-300 bg-transparent'}`}>
+                <h4 className="font-black text-gray-800 mb-4">{courtName}</h4>
+                
+                {matchOnCourt ? (
+                  <div className="flex flex-col h-full justify-between">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-3">
+                      <span className={`inline-block text-[10px] font-black px-2.5 py-1 rounded-md mb-3 tracking-widest uppercase ${matchOnCourt.poolName === 'Final' ? 'bg-yellow-100 text-yellow-700' : matchOnCourt.poolName.includes('Round ') || matchOnCourt.poolName.includes('Knockout') ? 'bg-purple-100 text-purple-700' : customPools.includes(matchOnCourt.poolName) ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-600'}`}>
                         {matchOnCourt.poolName}
                       </span>
-                      <p className="text-sm font-bold mt-2">{matchOnCourt.teamA} vs {matchOnCourt.teamB}</p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-2 w-full">
+                          <div className="flex items-center text-sm font-bold text-gray-900">
+                             <span className="w-2.5 h-2.5 rounded-full mr-2 shadow-inner flex-shrink-0" style={{ backgroundColor: liveActiveTournament.teamColors?.[matchOnCourt.teamA] || '#2563EB' }}></span>
+                             <span className="truncate">{matchOnCourt.teamA}</span>
+                          </div>
+                          <div className="flex items-center text-sm font-bold text-gray-900">
+                             <span className="w-2.5 h-2.5 rounded-full mr-2 shadow-inner flex-shrink-0" style={{ backgroundColor: liveActiveTournament.teamColors?.[matchOnCourt.teamB] || '#2563EB' }}></span>
+                             <span className="truncate">{matchOnCourt.teamB}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-center justify-center bg-gray-50 rounded-lg p-2 ml-4">
+                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Score</span>
+                          <span className="font-mono font-bold text-blue-600">{matchOnCourt.teamAPoints}-{matchOnCourt.teamBPoints}</span>
+                        </div>
+                      </div>
                     </div>
+                    <button onClick={() => unassignMatch(matchOnCourt.id)} className="text-xs text-red-500 font-bold hover:text-red-700 py-1 flex items-center justify-center"><Trash2 size={12} className="mr-1"/> Unassign Court</button>
                   </div>
-                  <button onClick={() => unassignMatch(matchOnCourt.id)} className="text-xs text-red-600 font-bold hover:underline">Unassign Court</button>
-                </div>
+                ) : (
+                  <div className="flex flex-col gap-3 h-full justify-center">
+                    <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="w-full border-2 border-gray-200 p-3 rounded-xl text-sm bg-white font-medium focus:border-blue-500 focus:outline-none">
+                      <option value="">-- Select Pending Match --</option>
+                      {assignablePendingMatches.map(m => (
+                        <option key={m.id} value={m.id}>[{m.poolName}] {m.teamA} vs {m.teamB}</option>
+                      ))}
+                    </select>
+                    <button onClick={() => assignMatchToCourt(i)} className="bg-gray-900 hover:bg-black text-white px-4 py-3 rounded-xl font-bold text-sm w-full transition-colors shadow-sm">Assign Match</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 🔴 MATCH QUEUES */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* Pending */}
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest">Pending ({pendingMatches.length})</h3>
+            {completedMatches.filter(m => m.poolName === 'Knockout - Crossover').length === 2 && !matches.find(m => m.tournamentId === liveActiveTournament?.id && m.poolName === 'Final') && (
+              <button onClick={handleCreateFinal} className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center">
+                <Trophy size={14} className="mr-1.5" /> Generate Final
+              </button>
+            )}
+          </div>
+          
+          {editingMatch && (
+            <div className="bg-white p-5 rounded-2xl border border-blue-200 shadow-md mb-4 animate-fade-in">
+              <h4 className="font-black text-blue-900 mb-3 text-xs uppercase tracking-widest">Edit Match Teams</h4>
+              <div className="space-y-3">
+                <input type="text" value={editForm.teamA} onChange={e => setEditForm({...editForm, teamA: e.target.value})} className="w-full border-2 border-gray-200 p-3 rounded-xl focus:border-blue-500 outline-none font-bold" placeholder="Team A Name" />
+                <input type="text" value={editForm.teamB} onChange={e => setEditForm({...editForm, teamB: e.target.value})} className="w-full border-2 border-gray-200 p-3 rounded-xl focus:border-blue-500 outline-none font-bold" placeholder="Team B Name" />
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button onClick={saveEditedMatch} className="flex-1 bg-blue-600 text-white py-2 rounded-xl font-bold hover:bg-blue-700 transition-colors">Save</button>
+                <button onClick={() => setEditingMatch(null)} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-xl font-bold hover:bg-gray-200 transition-colors">Cancel</button>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="max-h-[300px] overflow-y-auto custom-scrollbar divide-y divide-gray-50">
+              {pendingMatches.length === 0 ? (
+                <p className="text-sm text-gray-400 p-6 text-center font-medium">No matches in queue.</p>
               ) : (
-                <div className="flex flex-col sm:flex-row gap-2 w-full">
-                  <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border p-2 rounded text-sm w-full">
-                    <option value="">-- Select Pending Match --</option>
-                    {assignablePendingMatches.map(m => (
-                      <option key={m.id} value={m.id}>[{m.poolName}] {m.teamA} vs {m.teamB}</option>
-                    ))}
-                  </select>
-                  <button onClick={() => assignMatchToCourt(i)} className="bg-blue-600 text-white px-4 py-2 rounded font-bold text-sm w-full sm:w-auto hover:bg-blue-700 transition-colors">Assign</button>
-                </div>
+                pendingMatches.map(m => (
+                  <div key={m.id} className="p-4 hover:bg-gray-50 transition-colors flex justify-between items-center group">
+                    <div className="truncate pr-4">
+                      <span className={`text-[10px] font-black uppercase tracking-widest mr-2 ${m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Round ') || m.poolName.includes('Knockout') ? 'text-purple-600' : customPools.includes(m.poolName) ? 'text-pink-600' : 'text-blue-600'}`}>
+                        {m.poolName}
+                      </span>
+                      <span className="text-sm font-bold text-gray-800">{m.teamA} <span className="text-gray-400 font-normal mx-1">vs</span> {m.teamB}</span>
+                    </div>
+                    <button onClick={() => { setEditingMatch(m.id); setEditForm({teamA: m.teamA, teamB: m.teamB}); }} className="opacity-0 group-hover:opacity-100 bg-gray-100 p-2 rounded-lg text-gray-500 hover:text-blue-600 transition-all">
+                      <Edit2 size={14} />
+                    </button>
+                  </div>
+                ))
               )}
             </div>
-          );
-        })}
-      </div>
-
-      {/* --- MATCH QUEUE (PENDING) --- */}
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-sm font-bold text-gray-500 uppercase">Pending Matches ({pendingMatches.length})</h3>
-        
-        {completedMatches.filter(m => m.poolName === 'Knockout - Crossover').length === 2 && !matches.find(m => m.tournamentId === liveActiveTournament?.id && m.poolName === 'Final') && (
-          <button onClick={handleCreateFinal} className="bg-yellow-500 text-white px-3 py-1 text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition-colors">
-            🏆 Generate Final Match
-          </button>
-        )}
-      </div>
-      
-      {editingMatch ? (
-        <div className="bg-white p-4 rounded-lg border shadow mb-4">
-          <h4 className="font-bold mb-2">Resolve Teams</h4>
-          <input type="text" value={editForm.teamA} onChange={e => setEditForm({...editForm, teamA: e.target.value})} className="w-full border p-2 mb-2 rounded focus:border-blue-500 focus:outline-none" placeholder="Team A Name" />
-          <input type="text" value={editForm.teamB} onChange={e => setEditForm({...editForm, teamB: e.target.value})} className="w-full border p-2 mb-3 rounded focus:border-blue-500 focus:outline-none" placeholder="Team B Name" />
-          <div className="flex gap-2">
-            <button onClick={saveEditedMatch} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700 transition-colors">Save</button>
-            <button onClick={() => setEditingMatch(null)} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 transition-colors">Cancel</button>
           </div>
         </div>
-      ) : null}
 
-      <div className="bg-gray-50 p-2 rounded-lg border max-h-48 overflow-y-auto mb-6">
-        {pendingMatches.length === 0 && <p className="text-sm text-gray-500 p-2 italic">No matches pending.</p>}
-        {pendingMatches.map(m => (
-          <div key={m.id} className="text-sm border-b py-2 flex justify-between items-center pr-2">
-            <span>
-              <strong className={m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Round ') || m.poolName.includes('Knockout') ? 'text-purple-600' : customPools.includes(m.poolName) ? 'text-pink-600' : 'text-blue-600'}>
-                [{m.poolName}]
-              </strong> {m.teamA} vs {m.teamB}
-            </span>
-            <button onClick={() => { setEditingMatch(m.id); setEditForm({teamA: m.teamA, teamB: m.teamB}); }} className="text-xs text-blue-600 font-bold hover:underline">Edit</button>
+        {/* Completed */}
+        <div>
+          <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-4">Completed ({completedMatches.length})</h3>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="max-h-[300px] overflow-y-auto custom-scrollbar divide-y divide-gray-50">
+              {completedMatches.length === 0 ? (
+                <p className="text-sm text-gray-400 p-6 text-center font-medium">No matches finished.</p>
+              ) : (
+                completedMatches.map(m => (
+                  <div key={m.id} className="p-4 hover:bg-gray-50 transition-colors flex justify-between items-center">
+                    <div className="truncate pr-4">
+                      <div className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Round ') || m.poolName.includes('Knockout') ? 'text-purple-600' : customPools.includes(m.poolName) ? 'text-pink-600' : 'text-blue-600'}`}>
+                        {m.poolName}
+                      </div>
+                      <span className="text-sm font-bold text-gray-600">{m.teamA} vs {m.teamB}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-0.5">Winner</span>
+                      <span className="inline-flex items-center text-green-600 font-black text-xs bg-green-50 px-2 py-1 rounded">
+                        <Trophy size={10} className="mr-1" /> {m.winner}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        ))}
-      </div>
+        </div>
 
-      {/* --- COMPLETED MATCHES --- */}
-      <h3 className="text-sm font-bold text-gray-500 uppercase mb-3">Completed Matches ({completedMatches.length})</h3>
-      <div className="bg-gray-50 p-2 rounded-lg border max-h-48 overflow-y-auto">
-        {completedMatches.length === 0 && <p className="text-sm text-gray-500 p-2 italic">No matches completed yet.</p>}
-        {completedMatches.map(m => (
-          <div key={m.id} className="text-sm border-b py-2 flex justify-between">
-            <span>
-              <strong className={m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Round ') || m.poolName.includes('Knockout') ? 'text-purple-600' : customPools.includes(m.poolName) ? 'text-pink-600' : 'text-blue-600'}>
-                [{m.poolName}]
-              </strong> {m.teamA} vs {m.teamB}
-            </span>
-            <span className="font-bold text-green-600">Winner: {m.winner || 'Finished'}</span>
-          </div>
-        ))}
       </div>
     </div>
   );
