@@ -55,15 +55,23 @@ export default function ParticipantView() {
 
   const tourneyMatches = matches.filter(m => m.tournamentId === selectedTournament.id);
   
-  // Group matches by category
-  const pools = Array.from(new Set(tourneyMatches.map(m => m.poolName)));
+  // 🔴 FIX: Dynamically separate standard pools vs custom referee pools
+  const standardPools = Object.keys(selectedTournament?.pools || {});
+  const allMatchPools = Array.from(new Set(tourneyMatches.map(m => m.poolName)));
   
-  const sortedPools = pools.sort((a, b) => {
+  const customPools = allMatchPools.filter(p => 
+    !standardPools.includes(p) && 
+    p !== 'Knockout - Crossover' && 
+    p !== 'Final' &&
+    !p.startsWith('Round ')
+  );
+
+  const sortedPools = allMatchPools.sort((a, b) => {
     if (a.includes('Round') && b.includes('Round')) return a.localeCompare(b);
     if (a === 'Final') return 1;
     if (b === 'Final') return -1;
     if (a === 'Knockout - Crossover' && b !== 'Final') return 1;
-    return -1;
+    return a.localeCompare(b); 
   });
 
   const getTeamColor = (teamName) => {
@@ -86,11 +94,13 @@ export default function ParticipantView() {
       
       {sortedPools.map((poolName) => (
         <div key={poolName} className="mb-8">
-          <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3 border-b pb-2">{poolName}</h4>
+          <h4 className={`text-xs font-black uppercase tracking-widest mb-3 border-b pb-2 ${customPools.includes(poolName) ? 'text-purple-600' : 'text-gray-500'}`}>
+            {poolName} {customPools.includes(poolName) && '(Custom)'}
+          </h4>
           
-          <div className="overflow-x-auto border rounded-lg shadow-sm">
+          <div className={`overflow-x-auto border rounded-lg shadow-sm ${customPools.includes(poolName) ? 'border-purple-200' : 'border-gray-200'}`}>
             <table className="w-full text-sm text-left">
-              <thead className="bg-gray-50 text-gray-500 text-[10px] uppercase tracking-wider">
+              <thead className={`text-[10px] uppercase tracking-wider ${customPools.includes(poolName) ? 'bg-purple-50 text-purple-700' : 'bg-gray-50 text-gray-500'}`}>
                 <tr>
                   <th className="p-3">Teams</th>
                   <th className="p-3 text-center">Score</th>
