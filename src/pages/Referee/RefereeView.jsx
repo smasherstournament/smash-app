@@ -16,6 +16,10 @@ export default function RefereeView() {
   
   const [selectedPendingMatch, setSelectedPendingMatch] = useState({});
 
+  // 🔴 Custom Match State
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customForm, setCustomForm] = useState({ title: 'Exhibition', sets: 3, points: 21, courtName: '', teamA: '', teamB: '' });
+
   useEffect(() => {
     const unsubTournaments = onSnapshot(collection(db, 'tournaments'), (snapshot) => {
       setTournaments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -35,8 +39,8 @@ export default function RefereeView() {
   const parentTournament = tournaments.find(t => t.id === selectedTournamentId);
   const activeMatch = matches.find(m => m.id === selectedMatchId);
 
-  // Calculate Deuce & Advantage states at the top level
-  const targetPoints = parentTournament?.rules?.points || 21;
+  // 🔴 FIX: Dynamically pulls Sets and Points from customRules if it's a custom match
+  const targetPoints = activeMatch?.customRules?.points || parentTournament?.rules?.points || 21;
   const pointsA = activeMatch?.teamAPoints || 0;
   const pointsB = activeMatch?.teamBPoints || 0;
   const capPoints = targetPoints + 9; 
@@ -68,6 +72,50 @@ export default function RefereeView() {
     return !regex.test(m.teamA) && !regex.test(m.teamB) && m.teamA !== 'BYE' && m.teamB !== 'BYE';
   };
   const assignablePendingMatches = pendingMatches.filter(isMatchResolved);
+
+  // ==========================================
+  // 🔴 CUSTOM MATCH CREATION
+  // ==========================================
+  const handleCreateCustomMatch = async (e) => {
+    e.preventDefault();
+    if (!customForm.teamA || !customForm.teamB) return alert("Please enter both Team names.");
+
+    if (customForm.courtName) {
+      const existingMatch = activeCourts.find(m => m.courtName === customForm.courtName);
+      if (existingMatch) {
+        if (!window.confirm(`${customForm.courtName} is occupied. Unassign the current match and force this one?`)) return;
+        await updateDoc(doc(db, 'matches', existingMatch.id), { status: 'pending', courtName: null, teamAPoints: 0, teamBPoints: 0 });
+      }
+    }
+
+    const matchRef = await addDoc(collection(db, 'matches'), {
+      tournamentId: selectedTournamentId,
+      poolName: customForm.title || 'Exhibition',
+      teamA: customForm.teamA,
+      teamB: customForm.teamB,
+      teamAPoints: 0,
+      teamBPoints: 0,
+      currentSet: 1,
+      completedSets: [],
+      status: customForm.courtName ? 'active' : 'pending',
+      courtName: customForm.courtName || null,
+      customRules: {
+        sets: parseInt(customForm.sets) || 3,
+        points: parseInt(customForm.points) || 21
+      },
+      createdAt: serverTimestamp(),
+      isCustom: true // Marks this as a referee-created custom match
+    });
+
+    setShowCustomForm(false);
+    setCustomForm({ title: 'Exhibition', sets: 3, points: 21, courtName: '', teamA: '', teamB: '' });
+    
+    if (customForm.courtName) {
+       setSelectedMatchId(matchRef.id);
+    } else {
+       alert("Custom Match added to Pending Queue!");
+    }
+  };
 
   // ==========================================
   // SCORING LOGIC
@@ -483,6 +531,16 @@ export default function RefereeView() {
           <div>
             <h2 className="text-xl font-bold mb-1 text-gray-800">{parentTournament?.tournamentName}</h2>
             <h3 className="text-md font-semibold text-gray-500">Select Assigned Court</h3>
+            
+            {/* 🔴 NEW: Add Custom Match Button correctly placed here */}
+            {parentTournament?.allowRefereeCustomMatches && (
+              <button 
+                onClick={() => setShowCustomForm(!showCustomForm)} 
+                className="mt-3 bg-purple-600 text-white px-3 py-1.5 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors"
+              >
+                {showCustomForm ? 'Close Form' : '+ Add Custom Match'}
+              </button>
+            )}
           </div>
           
           {parentTournament?.allowRefereeCourtManagement && (
@@ -506,6 +564,43 @@ export default function RefereeView() {
             </div>
           )}
         </div>
+
+        {/* 🔴 NEW: CUSTOM MATCH FORM */}
+        {showCustomForm && (
+          <div className="mb-8 p-4 bg-purple-50 border-2 border-purple-200 rounded-xl shadow-inner">
+            <h4 className="font-bold text-purple-900 mb-4 uppercase text-sm tracking-wider">Create Custom Match</h4>
+            <form onSubmit={handleCreateCustomMatch} className="space-y-3">
+              <input type="text" placeholder="Title (e.g. Exhibition, Semi-Pro)" value={customForm.title} onChange={e=>setCustomForm({...customForm, title: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Sets (Best Of)</label>
+                  <input type="number" min="1" step="2" value={customForm.sets} onChange={e=>setCustomForm({...customForm, sets: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Points per Set</label>
+                  <input type="number" min="1" value={customForm.points} onChange={e=>setCustomForm({...customForm, points: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <input type="text" placeholder="Team 1 Name" value={customForm.teamA} onChange={e=>setCustomForm({...customForm, teamA: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+                <input type="text" placeholder="Team 2 Name" value={customForm.teamB} onChange={e=>setCustomForm({...customForm, teamB: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+              </div>
+
+              <select value={customForm.courtName} onChange={e=>setCustomForm({...customForm, courtName: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:border-purple-500 focus:outline-none">
+                <option value="">-- Send to Pending Queue --</option>
+                {Array.from({ length: parentTournament.numCourts || 2 }).map((_, i) => (
+                  <option key={i} value={`Court ${i + 1}`}>Assign directly to Court {i + 1}</option>
+                ))}
+              </select>
+
+              <button type="submit" className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold mt-2 hover:bg-purple-700 transition-colors shadow-sm">
+                Create Match
+              </button>
+            </form>
+          </div>
+        )}
         
         {parentTournament?.allowRefereeCourtManagement ? (
           <div className="space-y-4">
@@ -521,7 +616,8 @@ export default function RefereeView() {
                     <div>
                       <button onClick={() => setSelectedMatchId(matchOnCourt.id)} className="w-full text-left bg-white p-3 rounded shadow-sm border mb-2 flex justify-between items-center hover:border-blue-500 active:bg-blue-100 transition-colors">
                         <div>
-                          <div className="text-xs font-bold text-blue-600 mb-1">[{matchOnCourt.poolName}]</div>
+                          {/* 🔴 Custom match formatting in court display */}
+                          <div className={`text-xs font-bold mb-1 ${matchOnCourt.isCustom ? 'text-purple-600' : 'text-blue-600'}`}>[{matchOnCourt.poolName}]</div>
                           <div className="text-sm font-bold text-gray-800 flex items-center">
                              <span className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: parentTournament.teamColors?.[matchOnCourt.teamA] || '#2563EB' }}></span>
                              {matchOnCourt.teamA} vs {matchOnCourt.teamB}
@@ -534,7 +630,6 @@ export default function RefereeView() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2 w-full">
-                      {/* 🔴 FIX: Now mapping over assignablePendingMatches to hide placeholders */}
                       <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border-2 border-gray-200 p-3 rounded-lg text-sm w-full bg-white">
                         <option value="">-- Select Pending Match --</option>
                         {assignablePendingMatches.map(m => (
@@ -561,7 +656,7 @@ export default function RefereeView() {
                   <button key={match.id} onClick={() => setSelectedMatchId(match.id)} className="w-full text-left p-4 border-2 border-gray-100 rounded-xl hover:border-blue-500 active:bg-blue-50 transition-all flex justify-between items-center">
                     <div>
                       <div className="font-bold text-lg text-gray-800">{match.courtName}</div>
-                      <div className="text-sm text-gray-500"><strong className="text-blue-600">[{match.poolName}]</strong> {match.teamA} vs {match.teamB}</div>
+                      <div className="text-sm text-gray-500"><strong className={match.isCustom ? 'text-purple-600' : 'text-blue-600'}>[{match.poolName}]</strong> {match.teamA} vs {match.teamB}</div>
                     </div>
                   </button>
                 ))}
@@ -578,7 +673,7 @@ export default function RefereeView() {
   // ==========================================
   if (!activeMatch) return <div className="p-4 text-center">Loading match data...</div>;
 
-  const maxSets = parentTournament.rules?.sets || 3;
+  const currentMaxSets = activeMatch.customRules?.sets || parentTournament.rules?.sets || 3;
   const currentSetNum = activeMatch.currentSet || 1;
   const pastSets = activeMatch.completedSets || [];
   const isMatchCompleted = activeMatch.status === 'completed';
@@ -600,7 +695,9 @@ export default function RefereeView() {
           </div>
         ) : (
           <p className="text-sm font-bold text-gray-500 uppercase mt-1">
-            Set {currentSetNum} of {maxSets} • Play to {targetPoints}
+            {/* 🔴 Custom match tag */}
+            {activeMatch.isCustom && <span className="text-purple-600 font-bold tracking-widest mr-1">[{activeMatch.poolName}]</span>}
+            Set {currentSetNum} of {currentMaxSets} • Play to {targetPoints}
           </p>
         )}
       </div>
@@ -677,7 +774,7 @@ export default function RefereeView() {
 
       {!isMatchCompleted ? (
         <button 
-          onClick={() => handleEndSet(activeMatch, maxSets)} 
+          onClick={() => handleEndSet(activeMatch, currentMaxSets)} 
           className={`mt-6 w-full text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center transition-all shadow-sm ${
             isSetWon 
               ? 'bg-green-600 active:bg-green-700 animate-pulse border-2 border-green-800' 
