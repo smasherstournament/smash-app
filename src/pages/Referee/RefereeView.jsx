@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Minus, CheckCircle, Trophy, Lock } from 'lucide-react';
+import { Minus, CheckCircle, Trophy, Lock, ChevronLeft, Calendar, ShieldAlert, Plus, Trash2, Zap, PlayCircle, XCircle } from 'lucide-react';
 import { db } from '../../config/firebase';
 import { collection, onSnapshot, doc, updateDoc, writeBatch, addDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -33,13 +33,11 @@ export default function RefereeView() {
   }, []);
 
   // ==========================================
-  // 🔴 SAFE HOOK PLACEMENT & DERIVED STATE
-  // Variables must be calculated before early returns!
+  // SAFE HOOK PLACEMENT & DERIVED STATE
   // ==========================================
   const parentTournament = tournaments.find(t => t.id === selectedTournamentId);
   const activeMatch = matches.find(m => m.id === selectedMatchId);
 
-  // 🔴 FIX: Dynamically pulls Sets and Points from customRules if it's a custom match
   const targetPoints = activeMatch?.customRules?.points || parentTournament?.rules?.points || 21;
   const pointsA = activeMatch?.teamAPoints || 0;
   const pointsB = activeMatch?.teamBPoints || 0;
@@ -52,11 +50,10 @@ export default function RefereeView() {
   const isDeuce = !isSetWon && pointsA >= targetPoints - 1 && pointsB >= targetPoints - 1 && pointsA === pointsB && pointsA < capPoints;
   const hasAdvantage = !isSetWon && pointsA >= targetPoints - 1 && pointsB >= targetPoints - 1 && Math.abs(pointsA - pointsB) === 1 && Math.max(pointsA, pointsB) < capPoints;
 
-  // 🔴 VIBRATION EFFECT (Safely placed before any "return" statements)
   useEffect(() => {
     if (selectedMatchId && activeMatch && (isDeuce || hasAdvantage || isSetWon)) {
       if (navigator.vibrate) {
-        navigator.vibrate([200, 100, 200]); // Pulsing vibration pattern
+        navigator.vibrate([200, 100, 200]); 
       }
     }
   }, [isDeuce, hasAdvantage, isSetWon, selectedMatchId, activeMatch]);
@@ -66,7 +63,6 @@ export default function RefereeView() {
   const activeCourts = tourneyMatches.filter(m => m.status === 'active');
   const completedMatches = tourneyMatches.filter(m => m.status === 'completed');
 
-  // 🔴 FIX: Strict Regex completely blocks assigning unresolved placeholders
   const isMatchResolved = (m) => {
     const regex = /^(\d+)(st|nd|rd|th) Pool ([A-Z])$/;
     return !regex.test(m.teamA) && !regex.test(m.teamB) && m.teamA !== 'BYE' && m.teamB !== 'BYE';
@@ -74,7 +70,7 @@ export default function RefereeView() {
   const assignablePendingMatches = pendingMatches.filter(isMatchResolved);
 
   // ==========================================
-  // 🔴 CUSTOM MATCH CREATION
+  // CUSTOM MATCH CREATION
   // ==========================================
   const handleCreateCustomMatch = async (e) => {
     e.preventDefault();
@@ -104,17 +100,14 @@ export default function RefereeView() {
         points: parseInt(customForm.points) || 21
       },
       createdAt: serverTimestamp(),
-      isCustom: true // Marks this as a referee-created custom match
+      isCustom: true
     });
 
     setShowCustomForm(false);
     setCustomForm({ title: 'Exhibition', sets: 3, points: 21, courtName: '', teamA: '', teamB: '' });
     
-    if (customForm.courtName) {
-       setSelectedMatchId(matchRef.id);
-    } else {
-       alert("Custom Match added to Pending Queue!");
-    }
+    if (customForm.courtName) setSelectedMatchId(matchRef.id);
+    else alert("Custom Match added to Pending Queue!");
   };
 
   // ==========================================
@@ -122,63 +115,33 @@ export default function RefereeView() {
   // ==========================================
   const updateScore = async (team, increment) => {
     if (!activeMatch || activeMatch.status === 'completed') return;
-
     const currentScore = activeMatch[team === 'A' ? 'teamAPoints' : 'teamBPoints'];
     const newScore = Math.max(0, currentScore + increment);
-
-    const matchRef = doc(db, 'matches', selectedMatchId);
-    await updateDoc(matchRef, {
-      [team === 'A' ? 'teamAPoints' : 'teamBPoints']: newScore
-    });
+    await updateDoc(doc(db, 'matches', selectedMatchId), { [team === 'A' ? 'teamAPoints' : 'teamBPoints']: newScore });
   };
 
   const handleEndSet = async (matchData, maxSets) => {
     const teamAPoints = matchData.teamAPoints;
     const teamBPoints = matchData.teamBPoints;
 
-    if (teamAPoints === teamBPoints) {
-      alert("A set cannot end in a tie!");
-      return;
-    }
-
+    if (teamAPoints === teamBPoints) return alert("A set cannot end in a tie!");
     if (!window.confirm("Are you sure you want to freeze this set? The scores will be locked.")) return;
 
     const matchRef = doc(db, 'matches', selectedMatchId);
     const pastSets = matchData.completedSets || [];
     const currentSetNum = matchData.currentSet || 1;
-
     const setWinner = teamAPoints > teamBPoints ? 'A' : 'B';
 
-    const newPastSets = [...pastSets, {
-      teamA: teamAPoints,
-      teamB: teamBPoints,
-      winner: setWinner
-    }];
-
-    let setsWonA = 0;
-    let setsWonB = 0;
-    newPastSets.forEach(set => {
-      if (set.winner === 'A') setsWonA++;
-      if (set.winner === 'B') setsWonB++;
-    });
+    const newPastSets = [...pastSets, { teamA: teamAPoints, teamB: teamBPoints, winner: setWinner }];
+    let setsWonA = 0, setsWonB = 0;
+    newPastSets.forEach(set => { if (set.winner === 'A') setsWonA++; if (set.winner === 'B') setsWonB++; });
 
     const setsNeededToWin = Math.floor(maxSets / 2) + 1;
 
     if (setsWonA >= setsNeededToWin || setsWonB >= setsNeededToWin) {
-      const matchWinnerName = setsWonA >= setsNeededToWin ? matchData.teamA : matchData.teamB;
-      
-      await updateDoc(matchRef, {
-        completedSets: newPastSets,
-        status: 'completed',
-        winner: matchWinnerName 
-      });
+      await updateDoc(matchRef, { completedSets: newPastSets, status: 'completed', winner: setsWonA >= setsNeededToWin ? matchData.teamA : matchData.teamB });
     } else {
-      await updateDoc(matchRef, {
-        completedSets: newPastSets,
-        currentSet: currentSetNum + 1,
-        teamAPoints: 0,
-        teamBPoints: 0
-      });
+      await updateDoc(matchRef, { completedSets: newPastSets, currentSet: currentSetNum + 1, teamAPoints: 0, teamBPoints: 0 });
     }
   };
 
@@ -187,24 +150,15 @@ export default function RefereeView() {
     
     const matchRef = doc(db, 'matches', selectedMatchId);
     const pastSets = [...(matchData.completedSets || [])];
-    
     if (pastSets.length === 0) return;
-    
     const lastSet = pastSets.pop(); 
     
     await updateDoc(matchRef, {
-      completedSets: pastSets,
-      currentSet: matchData.currentSet > 1 ? matchData.currentSet - 1 : 1,
-      teamAPoints: lastSet.teamA,
-      teamBPoints: lastSet.teamB,
-      status: 'active',
-      winner: null 
+      completedSets: pastSets, currentSet: matchData.currentSet > 1 ? matchData.currentSet - 1 : 1,
+      teamAPoints: lastSet.teamA, teamBPoints: lastSet.teamB, status: 'active', winner: null 
     });
   };
 
-  // ==========================================
-  // COURT ASSIGNMENT LOGIC
-  // ==========================================
   const assignMatchToCourt = async (courtIndex) => {
     const courtName = `Court ${courtIndex + 1}`;
     const matchIdToAssign = selectedPendingMatch[courtName];
@@ -270,7 +224,6 @@ export default function RefereeView() {
         if (b.won !== a.won) return b.won - a.won;       
         if (b.setsWon !== a.setsWon) return b.setsWon - a.setsWon; 
         if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff; 
-        // 🔴 FIX: Stable sort fallback by team name ensures tables don't randomly reshuffle on live updates
         return a.team.localeCompare(b.team);               
       });
   };
@@ -322,7 +275,6 @@ export default function RefereeView() {
     alert(`${nextRoundName} has been generated successfully!`);
   };
 
-  // 🔴 FIX: Smart Auto-Resolve that blocks execution if pools aren't completely finished
   const handleAutoResolve = async () => {
     const regex = /^(\d+)(st|nd|rd|th) Pool ([A-Z])$/;
     
@@ -428,7 +380,6 @@ export default function RefereeView() {
     }
   };
 
-
   // ==========================================
   // RENDER SCREEN 1: TOURNAMENT SELECTION
   // ==========================================
@@ -436,12 +387,18 @@ export default function RefereeView() {
     const activeTournamentsList = tournaments.filter(t => t.status !== 'archived');
 
     return (
-      <div className="p-4 bg-white rounded-xl shadow-sm min-h-[60vh]">
-        <h2 className="text-2xl font-bold mb-4">Select Tournament</h2>
+      <div className="p-4 md:p-8 bg-gray-50 min-h-[85vh] rounded-2xl">
+        <h2 className="text-3xl font-black mb-8 text-gray-900 tracking-tight">Select Tournament</h2>
         {activeTournamentsList.length === 0 ? (
-          <p className="text-gray-500 italic">No active tournaments available.</p>
+          <div className="text-center p-12 bg-white rounded-3xl border border-gray-100 shadow-sm flex flex-col items-center">
+            <div className="bg-gray-50 p-6 rounded-full mb-4">
+              <Trophy className="text-gray-300" size={48} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-800">No active tournaments</h3>
+            <p className="text-gray-500 font-medium mt-1">Wait for an admin to start a tournament.</p>
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {activeTournamentsList.map(tourney => (
               <button 
                 key={tourney.id} 
@@ -451,13 +408,19 @@ export default function RefereeView() {
                   setPinCode('');
                   setPinError('');
                 }} 
-                className="w-full text-left p-4 border-2 border-gray-100 rounded-xl hover:border-blue-500 active:bg-blue-50 transition-all flex justify-between items-center"
+                className="w-full bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-left hover:border-blue-500 hover:shadow-md transition-all flex flex-col justify-between group h-full"
               >
-                <div>
-                  <div className="font-bold text-lg text-gray-800">{tourney.tournamentName || 'Unnamed Tournament'}</div>
-                  <div className="text-sm text-gray-500 capitalize">{tourney.type?.replace('-', ' ')} • Best of {tourney.rules?.sets || 3}</div>
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-xl text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">{tourney.tournamentName || 'Unnamed Tournament'}</h3>
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mt-2 flex items-center">
+                       {tourney.type?.replace('-', ' ')} • Best of {tourney.rules?.sets || 3}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-full group-hover:bg-blue-50 transition-colors">
+                    <Lock className="text-gray-400 group-hover:text-blue-500" size={20} />
+                  </div>
                 </div>
-                <Lock className="text-gray-300" size={20} />
               </button>
             ))}
           </div>
@@ -476,167 +439,202 @@ export default function RefereeView() {
         setIsAuthorized(true);
         setPinError('');
       } else {
-        setPinError('Incorrect Referee Code. Please ask the Admin.');
+        setPinError('Incorrect Referee Code.');
         setPinCode('');
       }
     };
 
     return (
-      <div className="p-4 bg-white rounded-xl shadow-sm min-h-[60vh] flex flex-col justify-center items-center relative">
+      <div className="flex items-center justify-center min-h-[85vh] bg-gray-50 p-4 rounded-2xl relative">
         <button 
           onClick={() => setSelectedTournamentId(null)} 
-          className="absolute top-6 left-6 text-xs text-blue-600 font-bold uppercase"
+          className="absolute top-6 left-6 text-xs text-blue-600 font-black uppercase tracking-widest flex items-center hover:text-blue-800 transition-colors"
         >
-          ← Back
+          <ChevronLeft size={16} className="mr-1" /> Back
         </button>
         
-        <div className="bg-blue-50 p-4 rounded-full mb-4">
-          <Lock className="text-blue-600" size={32} />
+        <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+          <div className="flex justify-center mb-6">
+            <div className="bg-blue-50 p-4 rounded-full">
+              <ShieldAlert className="text-blue-600" size={32} />
+            </div>
+          </div>
+          <h2 className="text-2xl font-black mb-2 text-center text-gray-900 leading-tight">{parentTournament?.tournamentName}</h2>
+          <p className="text-gray-500 text-sm mb-8 text-center font-medium">Enter the 6-digit referee code to access courts.</p>
+          
+          <form onSubmit={handlePinSubmit} className="space-y-6">
+            <div>
+              <input 
+                type="tel" 
+                maxLength="6"
+                placeholder="000000"
+                value={pinCode}
+                onChange={(e) => setPinCode(e.target.value)}
+                className="w-full border-2 border-gray-200 p-4 rounded-2xl text-center text-4xl font-mono tracking-[0.5em] focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all outline-none text-gray-900"
+                required
+                autoFocus
+              />
+              {pinError && <p className="text-red-500 text-sm font-bold text-center mt-3 animate-pulse">{pinError}</p>}
+            </div>
+            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-md">
+              Unlock Dashboard
+            </button>
+          </form>
         </div>
-        <h2 className="text-2xl font-bold mb-2 text-center">{parentTournament?.tournamentName}</h2>
-        <p className="text-gray-500 text-sm mb-6 text-center">Enter the 6-digit referee code to access courts.</p>
-        
-        <form onSubmit={handlePinSubmit} className="w-full max-w-xs space-y-4">
-          <input 
-            type="tel" 
-            maxLength="6"
-            placeholder="000000"
-            value={pinCode}
-            onChange={(e) => setPinCode(e.target.value)}
-            className="w-full border-2 border-gray-300 p-4 rounded-xl text-center text-3xl font-mono tracking-[0.5em] focus:border-blue-500 focus:outline-none"
-            required
-            autoFocus
-          />
-          {pinError && <p className="text-red-500 text-sm font-bold text-center">{pinError}</p>}
-          <button 
-            type="submit" 
-            className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg active:bg-blue-700"
-          >
-            Unlock Dashboard
-          </button>
-        </form>
       </div>
     );
   }
 
   // ==========================================
-  // RENDER SCREEN 2: COURT SELECTION
+  // RENDER SCREEN 2: COURT SELECTION & MANAGER
   // ==========================================
   if (!selectedMatchId && isAuthorized) {
     return (
-      <div className="p-4 bg-white rounded-xl shadow-sm min-h-[60vh]">
-        <button onClick={() => setSelectedTournamentId(null)} className="text-xs text-blue-600 font-bold uppercase mb-4 block hover:underline">← Back to Tournaments</button>
+      <div className="p-4 md:p-8 bg-gray-50 min-h-[85vh] rounded-2xl pb-20">
+        <button onClick={() => setSelectedTournamentId(null)} className="flex items-center text-xs font-black text-gray-500 mb-6 uppercase tracking-widest hover:text-blue-600 transition-colors">
+          <ChevronLeft size={16} className="mr-1" /> Tournaments
+        </button>
         
-        <div className="flex justify-between items-start mb-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
           <div>
-            <h2 className="text-xl font-bold mb-1 text-gray-800">{parentTournament?.tournamentName}</h2>
-            <h3 className="text-md font-semibold text-gray-500">Select Assigned Court</h3>
+            <h2 className="text-2xl font-black mb-1 text-gray-900 tracking-tight">{parentTournament?.tournamentName}</h2>
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Select Assigned Court</h3>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 w-full md:w-auto">
+            {parentTournament?.allowRefereeCourtManagement && (
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                {parentTournament.type === 'knockout' ? (
+                  <button onClick={handleGenerateNextRound} className="bg-purple-600 text-white px-4 py-2.5 text-sm font-bold rounded-xl shadow-sm hover:bg-purple-700 transition-colors whitespace-nowrap flex items-center justify-center">
+                    <Zap size={16} className="mr-2" /> Next Round
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={handleAutoResolve} className="bg-purple-600 text-white px-4 py-2.5 text-sm font-bold rounded-xl shadow-sm hover:bg-purple-700 transition-colors whitespace-nowrap flex items-center justify-center">
+                      <Zap size={16} className="mr-2" /> Auto-Resolve
+                    </button>
+                    {completedMatches.filter(m => m.poolName === 'Knockout - Crossover').length === 2 && !tourneyMatches.find(m => m.poolName === 'Final') && (
+                      <button onClick={handleCreateFinal} className="bg-yellow-500 text-white px-4 py-2.5 text-sm font-bold rounded-xl shadow-sm hover:bg-yellow-600 transition-colors whitespace-nowrap flex items-center justify-center">
+                        <Trophy size={16} className="mr-2" /> Final Match
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             
-            {/* 🔴 NEW: Add Custom Match Button correctly placed here */}
             {parentTournament?.allowRefereeCustomMatches && (
               <button 
                 onClick={() => setShowCustomForm(!showCustomForm)} 
-                className="mt-3 bg-purple-600 text-white px-3 py-1.5 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors"
+                className={`px-4 py-2.5 text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center w-full sm:w-auto ${showCustomForm ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gradient-to-r from-purple-600 to-purple-500 text-white hover:from-purple-700 hover:to-purple-600 hover:shadow-md'}`}
               >
-                {showCustomForm ? 'Close Form' : '+ Add Custom Match'}
+                {showCustomForm ? <><XCircle size={16} className="mr-2"/> Cancel</> : <><Plus size={16} className="mr-2"/> Add Custom Match</>}
               </button>
             )}
           </div>
-          
-          {parentTournament?.allowRefereeCourtManagement && (
-            <div className="flex flex-col items-end gap-2">
-              {parentTournament.type === 'knockout' ? (
-                <button onClick={handleGenerateNextRound} className="bg-purple-600 text-white px-3 py-1.5 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors whitespace-nowrap">
-                  ⚡ Generate Next Round
-                </button>
-              ) : (
-                <>
-                  <button onClick={handleAutoResolve} className="bg-purple-600 text-white px-3 py-1.5 text-xs font-bold rounded shadow-sm hover:bg-purple-700 transition-colors whitespace-nowrap">
-                    ⚡ Auto-Resolve
-                  </button>
-                  {completedMatches.filter(m => m.poolName === 'Knockout - Crossover').length === 2 && !tourneyMatches.find(m => m.poolName === 'Final') && (
-                    <button onClick={handleCreateFinal} className="bg-yellow-500 text-white px-3 py-1.5 text-xs font-bold rounded shadow-sm hover:bg-yellow-600 transition-colors whitespace-nowrap">
-                      🏆 Generate Final Match
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* 🔴 NEW: CUSTOM MATCH FORM */}
+        {/* 🔴 CUSTOM MATCH FORM */}
         {showCustomForm && (
-          <div className="mb-8 p-4 bg-purple-50 border-2 border-purple-200 rounded-xl shadow-inner">
-            <h4 className="font-bold text-purple-900 mb-4 uppercase text-sm tracking-wider">Create Custom Match</h4>
-            <form onSubmit={handleCreateCustomMatch} className="space-y-3">
-              <input type="text" placeholder="Title (e.g. Exhibition, Semi-Pro)" value={customForm.title} onChange={e=>setCustomForm({...customForm, title: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+          <div className="mb-8 p-6 bg-white border-2 border-purple-100 rounded-3xl shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 to-purple-600"></div>
+            <h4 className="font-black text-purple-900 mb-6 uppercase tracking-widest flex items-center">
+               <Zap size={18} className="mr-2 text-purple-500" /> Create Custom Match
+            </h4>
+            <form onSubmit={handleCreateCustomMatch} className="space-y-5">
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Match Title</label>
+                <input type="text" placeholder="e.g. Exhibition, Semi-Pro" value={customForm.title} onChange={e=>setCustomForm({...customForm, title: e.target.value})} className="w-full border-2 border-gray-100 p-3 rounded-xl focus:border-purple-500 focus:ring-4 focus:ring-purple-50 transition-all outline-none font-bold" required />
+              </div>
               
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Sets (Best Of)</label>
-                  <input type="number" min="1" step="2" value={customForm.sets} onChange={e=>setCustomForm({...customForm, sets: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Sets (Best Of)</label>
+                  <input type="number" min="1" step="2" value={customForm.sets} onChange={e=>setCustomForm({...customForm, sets: e.target.value})} className="w-full border-2 border-gray-100 p-3 rounded-xl focus:border-purple-500 focus:ring-4 focus:ring-purple-50 transition-all outline-none font-bold" required />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Points per Set</label>
-                  <input type="number" min="1" value={customForm.points} onChange={e=>setCustomForm({...customForm, points: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Points per Set</label>
+                  <input type="number" min="1" value={customForm.points} onChange={e=>setCustomForm({...customForm, points: e.target.value})} className="w-full border-2 border-gray-100 p-3 rounded-xl focus:border-purple-500 focus:ring-4 focus:ring-purple-50 transition-all outline-none font-bold" required />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <input type="text" placeholder="Team 1 Name" value={customForm.teamA} onChange={e=>setCustomForm({...customForm, teamA: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
-                <input type="text" placeholder="Team 2 Name" value={customForm.teamB} onChange={e=>setCustomForm({...customForm, teamB: e.target.value})} className="w-full border p-2 rounded text-sm focus:border-purple-500 focus:outline-none" required />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Team 1 Name</label>
+                  <input type="text" placeholder="Team 1" value={customForm.teamA} onChange={e=>setCustomForm({...customForm, teamA: e.target.value})} className="w-full border-2 border-gray-100 p-3 rounded-xl focus:border-purple-500 focus:ring-4 focus:ring-purple-50 transition-all outline-none font-bold" required />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Team 2 Name</label>
+                  <input type="text" placeholder="Team 2" value={customForm.teamB} onChange={e=>setCustomForm({...customForm, teamB: e.target.value})} className="w-full border-2 border-gray-100 p-3 rounded-xl focus:border-purple-500 focus:ring-4 focus:ring-purple-50 transition-all outline-none font-bold" required />
+                </div>
               </div>
 
-              <select value={customForm.courtName} onChange={e=>setCustomForm({...customForm, courtName: e.target.value})} className="w-full border p-2 rounded text-sm bg-white focus:border-purple-500 focus:outline-none">
-                <option value="">-- Send to Pending Queue --</option>
-                {Array.from({ length: parentTournament.numCourts || 2 }).map((_, i) => (
-                  <option key={i} value={`Court ${i + 1}`}>Assign directly to Court {i + 1}</option>
-                ))}
-              </select>
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Assignment</label>
+                <select value={customForm.courtName} onChange={e=>setCustomForm({...customForm, courtName: e.target.value})} className="w-full border-2 border-gray-100 p-3 rounded-xl focus:border-purple-500 focus:ring-4 focus:ring-purple-50 transition-all outline-none font-bold bg-white">
+                  <option value="">-- Send to Pending Queue --</option>
+                  {Array.from({ length: parentTournament.numCourts || 2 }).map((_, i) => (
+                    <option key={i} value={`Court ${i + 1}`}>Assign directly to Court {i + 1}</option>
+                  ))}
+                </select>
+              </div>
 
-              <button type="submit" className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold mt-2 hover:bg-purple-700 transition-colors shadow-sm">
-                Create Match
+              <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-md mt-4 flex justify-center items-center">
+                <PlayCircle className="mr-2" /> Create & Start Match
               </button>
             </form>
           </div>
         )}
         
+        {/* COURTS */}
         {parentTournament?.allowRefereeCourtManagement ? (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
             {Array.from({ length: parentTournament.numCourts || 2 }).map((_, i) => {
               const courtName = `Court ${i + 1}`;
               const matchOnCourt = activeCourts.find(m => m.courtName === courtName);
 
               return (
-                <div key={courtName} className={`p-4 border-2 rounded-xl ${matchOnCourt ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
-                  <h4 className="font-bold text-gray-800 mb-3">{courtName}</h4>
+                <div key={courtName} className={`p-6 border-2 rounded-3xl transition-colors shadow-sm relative overflow-hidden flex flex-col ${matchOnCourt ? 'border-green-400 bg-white' : 'border-dashed border-gray-300 bg-gray-50/50'}`}>
+                  {matchOnCourt && <div className="absolute top-0 left-0 w-full h-1.5 bg-green-400"></div>}
+                  <h4 className="font-black text-gray-800 mb-4 text-lg">{courtName}</h4>
                   
                   {matchOnCourt ? (
-                    <div>
-                      <button onClick={() => setSelectedMatchId(matchOnCourt.id)} className="w-full text-left bg-white p-3 rounded shadow-sm border mb-2 flex justify-between items-center hover:border-blue-500 active:bg-blue-100 transition-colors">
-                        <div>
-                          {/* 🔴 Custom match formatting in court display */}
-                          <div className={`text-xs font-bold mb-1 ${matchOnCourt.isCustom ? 'text-purple-600' : 'text-blue-600'}`}>[{matchOnCourt.poolName}]</div>
-                          <div className="text-sm font-bold text-gray-800 flex items-center">
-                             <span className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: parentTournament.teamColors?.[matchOnCourt.teamA] || '#2563EB' }}></span>
-                             {matchOnCourt.teamA} vs {matchOnCourt.teamB}
-                             <span className="w-2 h-2 rounded-full ml-2" style={{ backgroundColor: parentTournament.teamColors?.[matchOnCourt.teamB] || '#2563EB' }}></span>
+                    <div className="flex flex-col flex-1 justify-between">
+                      <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 mb-4">
+                        <span className={`inline-block text-[10px] font-black px-3 py-1.5 rounded-lg mb-3 tracking-widest uppercase ${matchOnCourt.poolName === 'Final' ? 'bg-yellow-100 text-yellow-700' : matchOnCourt.poolName.includes('Round ') || matchOnCourt.poolName.includes('Knockout') ? 'bg-purple-100 text-purple-700' : matchOnCourt.isCustom ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {matchOnCourt.poolName}
+                        </span>
+                        <div className="flex flex-col gap-3 w-full">
+                          <div className="flex items-center text-base font-bold text-gray-900">
+                             <span className="w-3 h-3 rounded-full mr-3 shadow-inner flex-shrink-0" style={{ backgroundColor: parentTournament.teamColors?.[matchOnCourt.teamA] || '#2563EB' }}></span>
+                             <span className="truncate">{matchOnCourt.teamA}</span>
+                          </div>
+                          <div className="flex items-center text-base font-bold text-gray-900">
+                             <span className="w-3 h-3 rounded-full mr-3 shadow-inner flex-shrink-0" style={{ backgroundColor: parentTournament.teamColors?.[matchOnCourt.teamB] || '#2563EB' }}></span>
+                             <span className="truncate">{matchOnCourt.teamB}</span>
                           </div>
                         </div>
-                        <span className="text-blue-600 font-bold text-xs uppercase bg-blue-100 px-3 py-2 rounded-lg">Score →</span>
-                      </button>
-                      <button onClick={(e) => unassignMatch(matchOnCourt.id, e)} className="text-xs text-red-600 font-bold hover:underline py-1">Unassign Court</button>
+                      </div>
+                      <div className="flex gap-2 mt-auto">
+                        <button onClick={() => setSelectedMatchId(matchOnCourt.id)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition-colors shadow-sm flex justify-center items-center">
+                          Score Match <ChevronLeft size={16} className="ml-1 rotate-180" />
+                        </button>
+                        <button onClick={(e) => unassignMatch(matchOnCourt.id, e)} className="px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold transition-colors flex justify-center items-center">
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-2 w-full">
-                      <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="flex-1 border-2 border-gray-200 p-3 rounded-lg text-sm w-full bg-white">
-                        <option value="">-- Select Pending Match --</option>
+                    <div className="flex flex-col gap-3 flex-1 justify-center">
+                      <select value={selectedPendingMatch[courtName] || ''} onChange={(e) => setSelectedPendingMatch(prev => ({...prev, [courtName]: e.target.value}))} className="w-full border-2 border-gray-200 p-4 rounded-xl text-sm bg-white font-bold focus:border-blue-500 focus:ring-4 focus:ring-blue-50 outline-none transition-all cursor-pointer">
+                        <option value="">-- Select Match from Queue --</option>
                         {assignablePendingMatches.map(m => (
                           <option key={m.id} value={m.id}>[{m.poolName}] {m.teamA} vs {m.teamB}</option>
                         ))}
                       </select>
-                      <button onClick={() => assignMatchToCourt(i)} className="bg-blue-600 text-white px-4 py-3 rounded-lg font-bold text-sm w-full active:bg-blue-700 shadow-sm">Assign to {courtName}</button>
+                      <button onClick={() => assignMatchToCourt(i)} className="bg-gray-900 hover:bg-black text-white px-4 py-4 rounded-xl font-black text-sm w-full transition-colors shadow-sm">
+                        Assign to {courtName}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -644,19 +642,28 @@ export default function RefereeView() {
             })}
           </div>
         ) : (
-          <div>
+          <div className="mb-10">
             {activeCourts.length === 0 ? (
-              <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mt-4">
-                <p className="text-yellow-700 text-sm font-bold mb-1">No matches assigned!</p>
-                <p className="text-yellow-600 text-xs">Waiting for Admin to assign matches to courts.</p>
+              <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-2xl flex items-center justify-center flex-col text-center shadow-sm">
+                <Calendar className="text-yellow-400 mb-2" size={32} />
+                <p className="text-yellow-800 text-lg font-bold mb-1">No matches assigned!</p>
+                <p className="text-yellow-600 text-sm">Waiting for the Admin to assign matches to courts.</p>
               </div>
             ) : (
-              <div className="space-y-3 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {activeCourts.map(match => (
-                  <button key={match.id} onClick={() => setSelectedMatchId(match.id)} className="w-full text-left p-4 border-2 border-gray-100 rounded-xl hover:border-blue-500 active:bg-blue-50 transition-all flex justify-between items-center">
-                    <div>
-                      <div className="font-bold text-lg text-gray-800">{match.courtName}</div>
-                      <div className="text-sm text-gray-500"><strong className={match.isCustom ? 'text-purple-600' : 'text-blue-600'}>[{match.poolName}]</strong> {match.teamA} vs {match.teamB}</div>
+                  <button key={match.id} onClick={() => setSelectedMatchId(match.id)} className="w-full text-left bg-white p-6 border border-gray-100 rounded-3xl shadow-sm hover:border-blue-500 hover:shadow-md transition-all group relative overflow-hidden flex flex-col">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
+                    <div className="font-black text-xl text-gray-900 mb-4">{match.courtName}</div>
+                    <div className="bg-gray-50 p-4 rounded-2xl flex-1">
+                      <div className={`text-[10px] font-black uppercase tracking-widest mb-3 ${match.isCustom ? 'text-purple-600' : 'text-blue-600'}`}>[{match.poolName}]</div>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center text-sm font-bold text-gray-800"><span className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: parentTournament.teamColors?.[match.teamA] || '#2563EB' }}></span>{match.teamA}</div>
+                        <div className="flex items-center text-sm font-bold text-gray-800"><span className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: parentTournament.teamColors?.[match.teamB] || '#2563EB' }}></span>{match.teamB}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                      <span className="text-blue-600 font-bold text-xs uppercase bg-blue-50 px-4 py-2 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">Open Scoreboard →</span>
                     </div>
                   </button>
                 ))}
@@ -664,6 +671,57 @@ export default function RefereeView() {
             )}
           </div>
         )}
+
+        {/* 🔴 PENDING / COMPLETED QUEUES */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div>
+            <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-4">Pending Queue ({pendingMatches.length})</h3>
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="max-h-[300px] overflow-y-auto custom-scrollbar divide-y divide-gray-50">
+                {pendingMatches.length === 0 ? (
+                  <p className="text-sm text-gray-400 p-8 text-center font-medium">No matches in queue.</p>
+                ) : (
+                  pendingMatches.map(m => (
+                    <div key={m.id} className="p-5 hover:bg-gray-50 transition-colors">
+                      <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Round ') || m.poolName.includes('Knockout') ? 'text-purple-600' : m.isCustom ? 'text-pink-600' : 'text-blue-600'}`}>
+                        {m.poolName}
+                      </div>
+                      <span className="text-sm font-bold text-gray-800">{m.teamA} <span className="text-gray-400 font-normal mx-1">vs</span> {m.teamB}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-4">Completed ({completedMatches.length})</h3>
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="max-h-[300px] overflow-y-auto custom-scrollbar divide-y divide-gray-50">
+                {completedMatches.length === 0 ? (
+                  <p className="text-sm text-gray-400 p-8 text-center font-medium">No matches finished.</p>
+                ) : (
+                  completedMatches.map(m => (
+                    <div key={m.id} className="p-5 hover:bg-gray-50 transition-colors flex justify-between items-center">
+                      <div className="truncate pr-4">
+                        <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${m.poolName === 'Final' ? 'text-yellow-600' : m.poolName.includes('Round ') || m.poolName.includes('Knockout') ? 'text-purple-600' : m.isCustom ? 'text-pink-600' : 'text-blue-600'}`}>
+                          {m.poolName}
+                        </div>
+                        <span className="text-sm font-bold text-gray-600">{m.teamA} vs {m.teamB}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest block mb-1">Winner</span>
+                        <span className="inline-flex items-center text-green-700 font-black text-xs bg-green-50 px-2.5 py-1 rounded-md">
+                          <Trophy size={10} className="mr-1" /> {m.winner}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -671,7 +729,7 @@ export default function RefereeView() {
   // ==========================================
   // RENDER SCREEN 3: ACTIVE SCORING UI
   // ==========================================
-  if (!activeMatch) return <div className="p-4 text-center">Loading match data...</div>;
+  if (!activeMatch) return <div className="p-4 text-center text-gray-500 font-bold">Loading match data...</div>;
 
   const currentMaxSets = activeMatch.customRules?.sets || parentTournament.rules?.sets || 3;
   const currentSetNum = activeMatch.currentSet || 1;
@@ -683,121 +741,136 @@ export default function RefereeView() {
   const colorTeamB = parentTournament?.teamColors?.[activeMatch.teamB] || '#DC2626'; 
 
   return (
-    <div className="flex flex-col min-h-[85vh] bg-gray-50 p-2 rounded-xl">
-      <div className={`bg-white p-4 rounded-xl shadow-sm mb-4 text-center relative border-b-4 ${isMatchCompleted ? 'border-green-500' : 'border-blue-600'}`}>
-        <button onClick={() => setSelectedMatchId(null)} className="absolute left-4 top-4 text-sm text-blue-600 font-semibold hover:underline">← Courts</button>
-        <h2 className="text-xl font-bold text-gray-800 mt-6">{activeMatch.courtName}</h2>
+    <div className="flex flex-col min-h-[100vh] bg-gray-100 p-2 md:p-4 font-sans select-none">
+      
+      {/* HEADER */}
+      <div className={`bg-white p-5 rounded-3xl shadow-sm mb-4 text-center relative border-b-4 flex flex-col items-center justify-center ${isMatchCompleted ? 'border-green-500' : 'border-gray-800'}`}>
+        <button onClick={() => setSelectedMatchId(null)} className="absolute left-4 top-4 md:top-6 md:left-6 text-xs text-gray-500 font-black uppercase tracking-widest hover:text-gray-900 transition-colors flex items-center bg-gray-100 px-3 py-2 rounded-lg">
+          <ChevronLeft size={16} className="mr-1" /> Back
+        </button>
+        
+        <h2 className="text-2xl font-black text-gray-900 mt-8 md:mt-2 tracking-tight">{activeMatch.courtName}</h2>
         
         {isMatchCompleted ? (
-          <div className="mt-2 inline-flex items-center bg-green-100 text-green-800 px-4 py-1 rounded-full font-bold text-sm">
-            <Trophy size={16} className="mr-2" />
-            WINNER: {activeMatch.winner}
+          <div className="mt-3 inline-flex items-center bg-gradient-to-r from-green-400 to-green-600 text-white px-6 py-2 rounded-full font-black text-sm shadow-md uppercase tracking-widest animate-pulse">
+            <Trophy size={16} className="mr-2" /> MATCH WINNER: {activeMatch.winner}
           </div>
         ) : (
-          <p className="text-sm font-bold text-gray-500 uppercase mt-1">
-            {/* 🔴 Custom match tag */}
-            {activeMatch.isCustom && <span className="text-purple-600 font-bold tracking-widest mr-1">[{activeMatch.poolName}]</span>}
-            Set {currentSetNum} of {currentMaxSets} • Play to {targetPoints}
-          </p>
+          <div className="mt-2 flex flex-col items-center">
+            {activeMatch.isCustom && <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest mb-2 shadow-sm">Custom: {activeMatch.poolName}</span>}
+            <p className="text-sm font-black text-gray-500 uppercase tracking-widest bg-gray-100 px-4 py-1.5 rounded-full">
+              Set {currentSetNum} of {currentMaxSets} • Play to {targetPoints}
+            </p>
+          </div>
         )}
       </div>
 
+      {/* PAST SETS */}
       {pastSets.length > 0 && (
-        <div className="flex justify-center space-x-2 mb-4 overflow-x-auto pb-2">
+        <div className="flex justify-center space-x-3 mb-4 overflow-x-auto pb-2 custom-scrollbar">
           {pastSets.map((set, idx) => (
-            <div key={idx} className={`px-3 py-1 rounded text-sm font-bold whitespace-nowrap border-2 ${set.winner === 'A' ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-red-300 bg-red-50 text-red-800'}`}>
-              S{idx + 1}: {set.teamA} - {set.teamB}
+            <div key={idx} className={`px-4 py-2 rounded-xl text-sm font-black whitespace-nowrap shadow-sm border-2 ${set.winner === 'A' ? 'border-blue-200 bg-white text-blue-700' : 'border-red-200 bg-white text-red-700'}`}>
+              <span className="text-gray-400 text-xs mr-2">S{idx + 1}</span> {set.teamA} - {set.teamB}
             </div>
           ))}
         </div>
       )}
       
+      {/* NOTIFICATIONS */}
       {!isMatchCompleted && (
-        <>
+        <div className="min-h-[60px] flex items-end justify-center mb-4 w-full">
           {isSetWon && (
-            <div className="bg-green-100 border border-green-400 text-green-800 p-3 rounded-lg text-center font-bold mb-4 shadow-sm animate-pulse">
-              🎉 Set Finished! Please Freeze the Set.
+            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white w-full max-w-md p-3 rounded-2xl text-center font-black uppercase tracking-widest shadow-lg animate-bounce">
+              🎉 Set Finished! Freeze it.
             </div>
           )}
-          {isDeuce && (
-            <div className="bg-red-600 border-2 border-red-800 text-white p-3 rounded-lg text-center font-black tracking-widest mb-4 shadow-lg animate-pulse uppercase">
-              🔥 DEUCE! Win by 2 points!
+          {isDeuce && !isSetWon && (
+            <div className="bg-gradient-to-r from-red-600 to-red-700 text-white w-full max-w-md p-3 rounded-2xl text-center font-black uppercase tracking-widest shadow-lg animate-pulse">
+              🔥 DEUCE! Win by 2 points
             </div>
           )}
-          {hasAdvantage && (
-            <div className="bg-yellow-400 border-2 border-yellow-600 text-yellow-900 p-3 rounded-lg text-center font-black tracking-widest mb-4 shadow-lg animate-pulse uppercase">
+          {hasAdvantage && !isSetWon && (
+            <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 text-yellow-900 w-full max-w-md p-3 rounded-2xl text-center font-black uppercase tracking-widest shadow-lg animate-pulse">
               ⚡ ADVANTAGE {advantageTeamName}!
             </div>
           )}
-        </>
+        </div>
       )}
 
-      <div className="flex-1 grid grid-cols-2 gap-4">
-        <div className="flex flex-col space-y-3">
-          <div className="text-white p-3 rounded-t-xl text-center shadow" style={{ backgroundColor: colorTeamA }}>
-            <h3 className="font-semibold text-base truncate">{activeMatch.teamA}</h3>
+      {/* MAIN SCORING PANELS */}
+      <div className="flex-1 grid grid-cols-2 gap-3 md:gap-6">
+        {/* TEAM A */}
+        <div className="flex flex-col h-full">
+          <div className="text-white p-4 rounded-t-3xl text-center shadow-md z-10" style={{ backgroundColor: colorTeamA }}>
+            <h3 className="font-black text-lg md:text-2xl truncate tracking-tight">{activeMatch.teamA}</h3>
           </div>
           <button 
             onClick={() => updateScore('A', 1)} 
             disabled={isMatchCompleted || isSetWon} 
-            className="flex-1 bg-white active:bg-gray-100 text-gray-800 border-2 rounded-xl flex items-center justify-center shadow-sm transition-colors min-h-[160px] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 bg-white text-gray-900 border-x-4 flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
             style={{ borderColor: colorTeamA }}
           >
-            <span className="text-7xl font-bold">{isMatchCompleted ? '-' : activeMatch.teamAPoints}</span>
+            <span className="text-8xl md:text-[12rem] font-black tracking-tighter">{isMatchCompleted ? '-' : activeMatch.teamAPoints}</span>
           </button>
           {!isMatchCompleted && (
-            <button onClick={() => updateScore('A', -1)} className="p-4 bg-white border-2 border-gray-200 rounded-b-xl flex justify-center text-gray-600 active:bg-gray-100">
-              <Minus size={24} />
+            <button onClick={() => updateScore('A', -1)} className="p-6 bg-white border-x-4 border-b-4 rounded-b-3xl flex justify-center text-gray-400 hover:bg-gray-50 active:bg-gray-200 transition-colors" style={{ borderColor: colorTeamA }}>
+              <Minus size={32} className="bg-gray-100 rounded-full p-1" />
             </button>
           )}
+          {isMatchCompleted && <div className="h-6 bg-white border-x-4 border-b-4 rounded-b-3xl" style={{ borderColor: colorTeamA }}></div>}
         </div>
 
-        <div className="flex flex-col space-y-3">
-          <div className="text-white p-3 rounded-t-xl text-center shadow" style={{ backgroundColor: colorTeamB }}>
-            <h3 className="font-semibold text-base truncate">{activeMatch.teamB}</h3>
+        {/* TEAM B */}
+        <div className="flex flex-col h-full">
+          <div className="text-white p-4 rounded-t-3xl text-center shadow-md z-10" style={{ backgroundColor: colorTeamB }}>
+            <h3 className="font-black text-lg md:text-2xl truncate tracking-tight">{activeMatch.teamB}</h3>
           </div>
           <button 
             onClick={() => updateScore('B', 1)} 
             disabled={isMatchCompleted || isSetWon} 
-            className="flex-1 bg-white active:bg-gray-100 text-gray-800 border-2 rounded-xl flex items-center justify-center shadow-sm transition-colors min-h-[160px] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 bg-white text-gray-900 border-x-4 flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
             style={{ borderColor: colorTeamB }}
           >
-            <span className="text-7xl font-bold">{isMatchCompleted ? '-' : activeMatch.teamBPoints}</span>
+            <span className="text-8xl md:text-[12rem] font-black tracking-tighter">{isMatchCompleted ? '-' : activeMatch.teamBPoints}</span>
           </button>
           {!isMatchCompleted && (
-            <button onClick={() => updateScore('B', -1)} className="p-4 bg-white border-2 border-gray-200 rounded-b-xl flex justify-center text-gray-600 active:bg-gray-100">
-              <Minus size={24} />
+            <button onClick={() => updateScore('B', -1)} className="p-6 bg-white border-x-4 border-b-4 rounded-b-3xl flex justify-center text-gray-400 hover:bg-gray-50 active:bg-gray-200 transition-colors" style={{ borderColor: colorTeamB }}>
+              <Minus size={32} className="bg-gray-100 rounded-full p-1" />
             </button>
           )}
+          {isMatchCompleted && <div className="h-6 bg-white border-x-4 border-b-4 rounded-b-3xl" style={{ borderColor: colorTeamB }}></div>}
         </div>
       </div>
 
-      {!isMatchCompleted ? (
-        <button 
-          onClick={() => handleEndSet(activeMatch, currentMaxSets)} 
-          className={`mt-6 w-full text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center transition-all shadow-sm ${
-            isSetWon 
-              ? 'bg-green-600 active:bg-green-700 animate-pulse border-2 border-green-800' 
-              : 'bg-gray-800 active:bg-gray-700'
-          }`}
-        >
-          <CheckCircle className="mr-2" /> 
-          Freeze Set {currentSetNum}
-        </button>
-      ) : (
-        <button onClick={() => setSelectedMatchId(null)} className="mt-6 w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg active:bg-blue-700 flex items-center justify-center shadow-md transition-colors">
-          ← Back to Assigned Courts
-        </button>
-      )}
+      {/* FOOTER ACTIONS */}
+      <div className="mt-6 space-y-4">
+        {!isMatchCompleted ? (
+          <button 
+            onClick={() => handleEndSet(activeMatch, currentMaxSets)} 
+            className={`w-full text-white py-6 rounded-3xl font-black text-xl md:text-2xl flex items-center justify-center transition-all shadow-lg active:scale-95 ${
+              isSetWon 
+                ? 'bg-gradient-to-r from-green-500 to-green-600 animate-pulse border-4 border-green-200' 
+                : 'bg-gray-900 hover:bg-black'
+            }`}
+          >
+            <CheckCircle className="mr-3" size={28} /> 
+            Freeze Set {currentSetNum}
+          </button>
+        ) : (
+          <button onClick={() => setSelectedMatchId(null)} className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white py-6 rounded-3xl font-black text-xl active:scale-95 flex items-center justify-center shadow-lg transition-transform">
+            <ChevronLeft size={24} className="mr-2" /> Back to Assigned Courts
+          </button>
+        )}
 
-      {(isMatchCompleted || pastSets.length > 0) && (
-        <button 
-          onClick={() => handleUndoLastSet(activeMatch)} 
-          className="mt-4 w-full bg-orange-100 text-orange-700 py-3 rounded-xl font-bold active:bg-orange-200 border border-orange-300 transition-colors"
-        >
-          ↺ Undo Last Frozen Set
-        </button>
-      )}
+        {(isMatchCompleted || pastSets.length > 0) && (
+          <button 
+            onClick={() => handleUndoLastSet(activeMatch)} 
+            className="w-full bg-white text-orange-600 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-orange-50 active:bg-orange-100 border-2 border-orange-200 transition-colors shadow-sm"
+          >
+            ↺ Undo Last Frozen Set
+          </button>
+        )}
+      </div>
     </div>
   );
 }
