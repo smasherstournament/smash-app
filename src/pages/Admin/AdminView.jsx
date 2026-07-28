@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from '../../config/firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, setDoc, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, getDocs, writeBatch } from 'firebase/firestore';
-import { Trophy, LogOut, Plus, Activity, Settings, Users, CheckCircle, ChevronLeft, Calendar, Crown, Edit2, Trash2, Archive, PlayCircle, ShieldAlert, Zap, Lock } from 'lucide-react';
+import { Trophy, LogOut, Plus, Activity, Settings, Users, CheckCircle, ChevronLeft, Calendar, Crown, Edit2, Trash2, Archive, PlayCircle, ShieldAlert, Zap, Lock, Copy, Check } from 'lucide-react';
+
 // 🔴 Smart function to generate N perfectly unique colors
 const generateDynamicColor = (index, totalTeams) => {
   const hue = (index * 360) / totalTeams;
@@ -44,6 +45,7 @@ export default function AdminView() {
   const [editForm, setEditForm] = useState({ teamA: '', teamB: '' });
   
   const [isGenerating, setIsGenerating] = useState(false);
+  const [copied, setCopied] = useState(false); // 🔴 State for Copy Button animation
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, setUser);
@@ -729,9 +731,32 @@ export default function AdminView() {
           </button>
           <h2 className="text-3xl font-black text-gray-900 tracking-tight">{liveActiveTournament?.tournamentName}</h2>
         </div>
-        <div className="text-right bg-gradient-to-br from-gray-900 to-gray-800 p-4 rounded-2xl border border-gray-700 min-w-[160px] shadow-lg flex flex-col items-center md:items-end">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Lock size={12} className="mr-1"/> Referee Code</p>
-          <p className="text-3xl font-mono font-bold tracking-[0.2em] text-white">{liveActiveTournament?.refereeCode || 'N/A'}</p>
+        <div className="text-right bg-gradient-to-br from-gray-900 to-gray-800 p-4 rounded-2xl border border-gray-700 min-w-[180px] shadow-lg flex flex-col items-center md:items-end">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center">
+            <Lock size={12} className="mr-1"/> Referee Code
+          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-3xl font-mono font-bold tracking-[0.2em] text-white">
+              {liveActiveTournament?.refereeCode || 'N/A'}
+            </p>
+            {liveActiveTournament?.refereeCode && (
+              <button 
+                onClick={() => {
+                  navigator.clipboard.writeText(liveActiveTournament.refereeCode);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className={`p-2 rounded-xl border transition-all active:scale-95 flex items-center justify-center ${
+                  copied 
+                    ? 'bg-green-500/20 border-green-500/50 text-green-400' 
+                    : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700 hover:text-white'
+                }`}
+                title="Copy Referee Code"
+              >
+                {copied ? <Check size={18} /> : <Copy size={18} />}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
